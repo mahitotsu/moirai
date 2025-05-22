@@ -2,6 +2,7 @@ package com.mahitotsu.moirai;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
 
 import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeAsyncClient;
 
@@ -12,6 +13,7 @@ public class Main {
         SpringApplication.run(Main.class, args);
     }
 
+    @Bean
     public BedrockAgentRuntimeAsyncClient bedrockAgentRuntimeAsyncClient() {
         return BedrockAgentRuntimeAsyncClient.create();
     }

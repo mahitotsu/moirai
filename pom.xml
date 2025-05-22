@@ -26,12 +26,19 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sso</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>ssooidc</artifactId>
-            <scope>test</scope>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- build -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.38</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -71,11 +78,6 @@
                 <groupId>org.apache.maven</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.3</version>
-                <configuration>
-                    <environmentVariables>
-                        <AWS_REGION>ap-northeast-1</AWS_REGION>
-                    </environmentVariables>
-                </configuration>
             </plugin>
         </plugins>
     </build>
