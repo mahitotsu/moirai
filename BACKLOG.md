@@ -65,3 +65,4 @@
 - [x] uv workspace 設定 (pyproject.toml)
 - [x] CDK DataStack 雛形 (DynamoDBテーブル定義)
 - [x] Claude Code カスタマイズ (CLAUDE.md / settings.json / commands)
+- [x] 初回コミット (6f6aff6) — プロジェクト全体の scaffold を Git 管理下に置いた
