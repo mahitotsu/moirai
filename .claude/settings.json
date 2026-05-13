@@ -1,0 +1,59 @@
+{
+  "enabledPlugins": {
+    "aws-core@agent-toolkit-for-aws": true,
+    "aws-agents@agent-toolkit-for-aws": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pytest*)",
+      "Bash(python*)",
+      "Bash(pip*)",
+      "Bash(uv*)",
+      "Bash(npm*)",
+      "Bash(npx*)",
+      "Bash(make test*)",
+      "Bash(make lint*)",
+      "Bash(make build*)",
+      "Bash(make cdk-diff*)",
+      "Bash(make cdk-synth*)",
+      "Bash(ruff*)",
+      "Bash(mypy*)",
+      "Bash(cdk diff*)",
+      "Bash(cdk synth*)",
+      "Bash(cdk ls*)",
+      "Bash(docker build*)",
+      "Bash(aws sts get-caller-identity*)",
+      "Bash(aws ecr describe*)",
+      "Bash(aws ecr get-login-password*)",
+      "Bash(aws dynamodb describe-table*)",
+      "Bash(aws dynamodb list-tables*)",
+      "Bash(aws dynamodb scan*)",
+      "Bash(aws dynamodb query*)",
+      "Bash(find*)",
+      "Bash(ls*)",
+      "Bash(grep*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": [
+      "Bash(aws dynamodb delete-table*)",
+      "Bash(aws ecr delete-repository*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); file=$(echo \"$input\" | jq -r '.file_path // empty'); if [[ \"$file\" == *.py ]]; then echo \"[ruff] $file\"; cd /home/akring/moirai && uv run ruff check \"$file\" 2>&1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

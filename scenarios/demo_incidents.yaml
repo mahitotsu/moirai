@@ -1,0 +1,14 @@
+# デモシナリオ — Demo Generator Agent が Chat UI に順番に入力するインシデント
+incidents:
+  - category: database
+    description: "PostgreSQLへの接続が全部タイムアウトしている。アプリのログにconnection pool exhaustedが出てる"
+  - category: network
+    description: "nginxが断続的に502を返している。上流サービスは生きてそう"
+  - category: memory
+    description: "本番のAPIサーバーのメモリ使用率が90%を超えてアラートが出た"
+  - category: deploy
+    description: "さっきデプロイしたら一部のエンドポイントが500を返すようになった"
+  - category: database
+    description: "RDSのCPU使用率が突然95%に跳ね上がった。スロークエリログに特定のJOINクエリが大量に出ている"
+  - category: storage
+    description: "S3バケットへのPutObjectが突然AccessDeniedになっている。IAMポリシーは変えていない"

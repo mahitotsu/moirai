@@ -1,0 +1,29 @@
+# テスト実行マーカー
+.test-passed
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+uv.lock
+
+# Node
+ui/node_modules/
+ui/.next/
+ui/dist/
+ui/build/
+
+# AWS CDK
+infrastructure/cdk.out/
+
+# Docker
+*.tar
+
+# OS
+.DS_Store
