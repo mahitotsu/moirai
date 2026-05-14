@@ -21,12 +21,13 @@ test-service:
 
 lint:
 	uv run ruff check services/ mcp-servers/ agents/ infrastructure/
-	@MYPY_TARGETS=$$(find services/ mcp-servers/ agents/ -name "*.py" -printf "%h\n" 2>/dev/null | sort -u | tr '\n' ' '); \
-	if [ -n "$$MYPY_TARGETS" ]; then \
-	  uv run mypy $$MYPY_TARGETS --no-error-summary; \
-	else \
-	  echo "mypy: no Python files yet — skipped"; \
-	fi
+	@found=0; \
+	for svcdir in services/*/ mcp-servers/*/ agents/*/; do \
+	  [ -d "$$svcdir" ] || continue; \
+	  find "$$svcdir" -name "*.py" | grep -q . || continue; \
+	  found=1; uv run mypy "$$svcdir" --no-error-summary; \
+	done; \
+	[ "$$found" -eq 1 ] || echo "mypy: no Python files yet — skipped"
 
 build:
 	docker build --platform linux/arm64 \
