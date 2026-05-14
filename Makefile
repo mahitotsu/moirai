@@ -11,8 +11,9 @@ ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 # make cdk-deploy                 — CDKデプロイ (承認必要)
 # make gen-specs                  — OpenAPI spec JSONを再生成
 # make register-gateway           — AgentCore Gateway 登録 (承認必要)
+# make register-registry          — AgentCore Registry 登録 (MCP servers, 承認必要)
 
-.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway
+.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway register-registry
 
 test:
 	uv run pytest services/ mcp-servers/ agents/ -v --tb=short 2>/dev/null && touch .test-passed || \
@@ -70,3 +71,6 @@ register-gateway:
 	uv run python infrastructure/scripts/register_gateway.py \
 	  --ticket-url "$(TICKET_URL)" \
 	  --asset-url  "$(ASSET_URL)"
+
+register-registry:
+	uv run python infrastructure/scripts/register_registry.py

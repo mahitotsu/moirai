@@ -36,6 +36,56 @@ class ComputeStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # ECR repositories — Community Knowledge MCP servers (AgentCore Runtime)
+        # -------------------------------------------------------------------------
+        _mcp_names = ["stackoverflow", "github-issues", "wikipedia", "aws-docs"]
+        self.mcp_repos: dict[str, ecr.Repository] = {}
+        for _name in _mcp_names:
+            _cid = _name.replace("-", " ").title().replace(" ", "") + "McpRepo"
+            _repo = ecr.Repository(
+                self,
+                _cid,
+                repository_name=f"agora-{_name}",
+                removal_policy=cdk.RemovalPolicy.RETAIN,
+                lifecycle_rules=[
+                    ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
+                ],
+            )
+            self.mcp_repos[_name] = _repo
+            cdk.CfnOutput(self, f"{_cid}Uri", value=_repo.repository_uri)
+
+        # -------------------------------------------------------------------------
+        # IAM execution role for AgentCore Runtime (MCP servers)
+        # -------------------------------------------------------------------------
+        self.mcp_runtime_role = iam.Role(
+            self,
+            "McpRuntimeRole",
+            role_name="agora-mcp-runtime-role",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+        )
+        self.mcp_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:GetAuthorizationToken",
+                ],
+                resources=["*"],
+            )
+        )
+        self.mcp_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+        cdk.CfnOutput(self, "McpRuntimeRoleArn", value=self.mcp_runtime_role.role_arn)
+
+        # -------------------------------------------------------------------------
         # Shared API key for Gateway → Service authentication
         # Stored in Secrets Manager; injected into Lambda as API_KEY env var.
         # AgentCore Gateway references this secret as an api-key credential.

@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #6 AgentCore Registry 登録
+**次のタスク**: #7 A2Aエージェント群 実装・デプロイ
 
 ---
 
@@ -20,7 +20,7 @@
   - [x] 5b. GitHub Issues MCP (FastMCP + GitHub Search API)
   - [x] 5c. Wikipedia MCP (FastMCP + Wikipedia API)
   - [x] 5d. AWS Docs MCP (awslabs/mcp 流用)
-- [ ] 6. AgentCore Registry 登録 (capability タグ付き)
+- [x] 6. AgentCore Registry 登録 (capability タグ付き)
 - [ ] 7. A2Aエージェント群 実装・デプロイ
   - [ ] 7a. Triage Agent
   - [ ] 7b. Diagnosis Agent

@@ -1,8 +1,4 @@
 {
-  "enabledPlugins": {
-    "aws-core@agent-toolkit-for-aws": true,
-    "aws-agents@agent-toolkit-for-aws": true
-  },
   "permissions": {
     "allow": [
       "Bash(pytest*)",
@@ -34,7 +30,10 @@
       "Bash(grep*)",
       "Bash(git status*)",
       "Bash(git diff*)",
-      "Bash(git log*)"
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "WebFetch(domain:boto3.amazonaws.com)"
     ],
     "deny": [
       "Bash(aws dynamodb delete-table*)",
@@ -55,5 +54,9 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "aws-core@agent-toolkit-for-aws": true,
+    "aws-agents@agent-toolkit-for-aws": true
   }
 }
