@@ -5,14 +5,14 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #2 Ticket Service 実装 (FastAPI + DynamoDB)
+**次のタスク**: #3 Asset Service 実装 (FastAPI + DynamoDB)
 
 ---
 
 ## V1: 動く
 
 - [x] 1. DynamoDBテーブル設計・作成 (tickets / assets)
-- [ ] 2. Ticket Service 実装 (FastAPI + DynamoDB)
+- [x] 2. Ticket Service 実装 (FastAPI + DynamoDB)
 - [ ] 3. Asset Service 実装 (FastAPI + DynamoDB)
 - [ ] 4. AgentCore Gateway 登録 (OpenAPI spec → MCP変換)
 - [ ] 5. Community Knowledge MCP群 実装・デプロイ
