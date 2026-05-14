@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #5 Community Knowledge MCP群 実装・デプロイ
+**次のタスク**: #6 AgentCore Registry 登録
 
 ---
 
@@ -15,11 +15,11 @@
 - [x] 2. Ticket Service 実装 (FastAPI + DynamoDB)
 - [x] 3. Asset Service 実装 (FastAPI + DynamoDB)
 - [x] 4. AgentCore Gateway 登録 (OpenAPI spec → MCP変換)
-- [ ] 5. Community Knowledge MCP群 実装・デプロイ
-  - [ ] 5a. Stack Overflow MCP (FastMCP + Stack Exchange API)
-  - [ ] 5b. GitHub Issues MCP (FastMCP + GitHub Search API)
-  - [ ] 5c. Wikipedia MCP (FastMCP + Wikipedia API)
-  - [ ] 5d. AWS Docs MCP (awslabs/mcp 流用)
+- [x] 5. Community Knowledge MCP群 実装・デプロイ
+  - [x] 5a. Stack Overflow MCP (FastMCP + Stack Exchange API)
+  - [x] 5b. GitHub Issues MCP (FastMCP + GitHub Search API)
+  - [x] 5c. Wikipedia MCP (FastMCP + Wikipedia API)
+  - [x] 5d. AWS Docs MCP (awslabs/mcp 流用)
 - [ ] 6. AgentCore Registry 登録 (capability タグ付き)
 - [ ] 7. A2Aエージェント群 実装・デプロイ
   - [ ] 7a. Triage Agent
