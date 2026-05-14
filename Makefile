@@ -9,8 +9,10 @@ ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 # make deploy img=ticket-service  — ECRにプッシュ (承認必要)
 # make cdk-diff                   — CDK差分確認
 # make cdk-deploy                 — CDKデプロイ (承認必要)
+# make gen-specs                  — OpenAPI spec JSONを再生成
+# make register-gateway           — AgentCore Gateway 登録 (承認必要)
 
-.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy
+.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway
 
 test:
 	uv run pytest services/ mcp-servers/ agents/ -v --tb=short 2>/dev/null && touch .test-passed || \
@@ -30,13 +32,13 @@ lint:
 	[ "$$found" -eq 1 ] || echo "mypy: no Python files yet — skipped"
 
 build:
-	docker build --platform linux/arm64 \
-	  -t agora-$(img):latest \
-	  -f services/$(img)/Dockerfile services/$(img) \
-	  2>/dev/null || \
-	docker build --platform linux/arm64 \
-	  -t agora-$(img):latest \
-	  -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img)
+	@if [ -f services/$(img)/pyproject.toml ]; then \
+	  uv export --package $(img) --no-dev --no-hashes -o services/$(img)/requirements.txt; \
+	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f services/$(img)/Dockerfile services/$(img); \
+	else \
+	  uv export --package $(img) --no-dev --no-hashes -o mcp-servers/$(img)/requirements.txt; \
+	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img); \
+	fi
 
 deploy:
 	aws ecr get-login-password --region $(REGION) | \
@@ -52,3 +54,19 @@ cdk-synth:
 
 cdk-deploy:
 	cd infrastructure && cdk deploy --all --require-approval broadening
+
+gen-specs:
+	uv run python - << 'EOF'
+	import sys, json
+	sys.path.insert(0, 'services/ticket-service')
+	from app.main import app as t; json.dump(t.openapi(), open('infrastructure/specs/ticket-service.json','w'), indent=2)
+	sys.modules.pop('app.main', None); sys.modules.pop('app.settings', None); sys.modules.pop('app.models', None); sys.modules.pop('app.repository', None); sys.modules.pop('app', None)
+	sys.path.pop(0); sys.path.insert(0, 'services/asset-service')
+	from app.main import app as a; json.dump(a.openapi(), open('infrastructure/specs/asset-service.json','w'), indent=2)
+	print("Specs generated in infrastructure/specs/")
+	EOF
+
+register-gateway:
+	uv run python infrastructure/scripts/register_gateway.py \
+	  --ticket-url "$(TICKET_URL)" \
+	  --asset-url  "$(ASSET_URL)"

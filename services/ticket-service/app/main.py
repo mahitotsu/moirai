@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Annotated
 
 import boto3
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.models import Ticket, TicketCreate, TicketUpdate
 from app.repository import TicketRepository
@@ -13,6 +14,15 @@ settings = Settings()
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Ticket Service")
+
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    if settings.api_key and request.url.path not in ("/health", "/openapi.json", "/docs", "/redoc"):
+        key = request.headers.get("x-api-key", "")
+        if key != settings.api_key:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    return await call_next(request)
 
 
 def get_repository() -> TicketRepository:
