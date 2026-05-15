@@ -214,6 +214,20 @@ class ComputeStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # ECR repository — Gateway Agent (AgentCore Runtime / HTTP / AG-UI)
+        # -------------------------------------------------------------------------
+        self.gateway_agent_repo = ecr.Repository(
+            self,
+            "GatewayAgentRepo",
+            repository_name="agora-gateway",
+            removal_policy=cdk.RemovalPolicy.RETAIN,
+            lifecycle_rules=[
+                ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
+            ],
+        )
+        cdk.CfnOutput(self, "GatewayAgentRepoUri", value=self.gateway_agent_repo.repository_uri)
+
+        # -------------------------------------------------------------------------
         # ECR repositories — A2A agents (AgentCore Runtime / A2A protocol)
         # -------------------------------------------------------------------------
         _agent_names = ["triage", "diagnosis", "resolution"]

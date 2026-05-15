@@ -11,5 +11,5 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY agent.py system_prompt.md tools.py ./
 COPY common/ ./agents/common/
-EXPOSE 9000
+EXPOSE 8080
 CMD ["python", "agent.py"]

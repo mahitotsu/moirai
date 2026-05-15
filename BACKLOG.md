@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #8 Gateway Agent 実装・デプロイ (AG-UI protocol)
+**次のタスク**: #9 AgentCore Memory 設定
 
 ---
 
@@ -25,7 +25,7 @@
   - [x] 7a. Triage Agent
   - [x] 7b. Diagnosis Agent
   - [x] 7c. Resolution Agent
-- [ ] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
+- [x] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
 - [ ] 9. AgentCore Memory 設定
 - [ ] 10. React UI 実装
   - [ ] 10a. Chat タブ (AG-UI / SSE)

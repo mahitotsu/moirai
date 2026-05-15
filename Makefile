@@ -13,7 +13,7 @@ ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 # make gen-specs                  — OpenAPI spec JSONを再生成
 # make register-gateway           — AgentCore Gateway 登録 (承認必要)
 # make register-registry          — AgentCore Registry 登録 (MCP servers, 承認必要)
-# make register-agents            — AgentCore Runtime 登録 (A2A agents, 承認必要)
+# make register-agents            — AgentCore Runtime 登録 (A2A agents + Gateway Agent, 承認必要)
 
 .PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway register-registry register-agents
 

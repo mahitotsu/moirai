@@ -1,13 +1,13 @@
 """
-AgentCore Runtime registration script for A2A agents (Triage / Diagnosis / Resolution).
+AgentCore Runtime registration script for all agents.
 
-Creates (or idempotently reuses) three AgentCore Runtimes with A2A protocol,
-each tagged with capability="a2a-agent" and agent-type=<name>.
+Registers:
+  - Triage, Diagnosis, Resolution agents (A2A protocol, capability="a2a-agent")
+  - Gateway Agent (HTTP protocol, capability="gateway", the user-facing AG-UI endpoint)
 
 Run AFTER:
   1. `make cdk-deploy`  — creates ECR repos and agent IAM role
-  2. `make build img=triage && make deploy img=triage`  — for each agent
-     (same for diagnosis and resolution)
+  2. `make build img=<name> && make deploy img=<name>`  — for each agent
 
 Usage:
     uv run python infrastructure/scripts/register_agents.py
@@ -31,19 +31,19 @@ CAPABILITY = "a2a-agent"
 AGENTS: list[dict] = [
     {
         "name": "triage",
-        "runtime_name": "agora-triage",
+        "runtime_name": "agora_triage",
         "description": "Triage Agent — classifies IT incidents by severity and category",
         "env": {},
     },
     {
         "name": "diagnosis",
-        "runtime_name": "agora-diagnosis",
+        "runtime_name": "agora_diagnosis",
         "description": "Diagnosis Agent — searches community knowledge and past tickets",
         "env": {},  # TICKET_SERVICE_URL injected below
     },
     {
         "name": "resolution",
-        "runtime_name": "agora-resolution",
+        "runtime_name": "agora_resolution",
         "description": "Resolution Agent — generates resolution plans and creates incident tickets",
         "env": {},  # TICKET_SERVICE_URL injected below
     },
@@ -118,7 +118,7 @@ def _register_one(
     role_arn: str,
 ) -> dict:
     runtime_name = agent["runtime_name"]
-    endpoint_name = f"{runtime_name}-ep"
+    endpoint_name = f"{runtime_name}_ep"
 
     env_vars = {k: v for k, v in agent["env"].items() if v}
 
@@ -187,6 +187,69 @@ def _register_one(
     }
 
 
+def _register_gateway_agent(
+    control,
+    ecr_uri: str,
+    role_arn: str,
+) -> dict:
+    """Register the Gateway Agent (HTTP/AG-UI protocol) as an AgentCore Runtime."""
+    runtime_name = "agora_gateway"
+    endpoint_name = "agora_gateway_ep"
+
+    all_runtimes = _list_all_runtimes(control)
+    existing = next((r for r in all_runtimes if r["agentRuntimeName"] == runtime_name), None)
+
+    if existing:
+        runtime_id = existing["agentRuntimeId"]
+        runtime_arn = existing["agentRuntimeArn"]
+        print(f"  [gateway] Reusing Runtime: {runtime_id}")
+    else:
+        print(f"  [gateway] Creating Runtime '{runtime_name}' (HTTP/AG-UI) ...")
+        resp = control.create_agent_runtime(
+            agentRuntimeName=runtime_name,
+            description="Gateway Agent — user-facing orchestrator (AG-UI/SSE)",
+            agentRuntimeArtifact={
+                "containerConfiguration": {"containerUri": ecr_uri},
+            },
+            roleArn=role_arn,
+            networkConfiguration={"networkMode": "PUBLIC"},
+            protocolConfiguration={"serverProtocol": "HTTP"},
+            tags={
+                "capability": "gateway",
+                "project": "agora",
+            },
+        )
+        runtime_id = resp["agentRuntimeId"]
+        runtime_arn = resp["agentRuntimeArn"]
+        print(f"    Runtime ID: {runtime_id} — waiting for READY ...")
+        _wait_for_runtime(control, runtime_id)
+
+    all_endpoints = _list_all_endpoints(control, runtime_id)
+    existing_ep = next((e for e in all_endpoints if e["name"] == endpoint_name), None)
+
+    if existing_ep:
+        endpoint_id = existing_ep["id"]
+        print(f"  [gateway] Reusing Endpoint: {endpoint_id}")
+    else:
+        print(f"  [gateway] Creating Endpoint '{endpoint_name}' ...")
+        resp = control.create_agent_runtime_endpoint(
+            agentRuntimeId=runtime_id,
+            name=endpoint_name,
+            description="Default endpoint for agora-gateway",
+        )
+        endpoint_id = resp.get("id", endpoint_name)
+        print(f"    Endpoint ID: {endpoint_id} — waiting for READY ...")
+        _wait_for_endpoint(control, runtime_id, endpoint_name)
+
+    return {
+        "name": "gateway",
+        "runtime_name": runtime_name,
+        "runtime_id": runtime_id,
+        "runtime_arn": runtime_arn,
+        "endpoint_id": endpoint_id,
+    }
+
+
 def main() -> None:
     cf = boto3.client("cloudformation", region_name=REGION)
     control = boto3.client("bedrock-agentcore-control", region_name=REGION)
@@ -216,27 +279,46 @@ def main() -> None:
     account = boto3.client("sts", region_name=REGION).get_caller_identity()["Account"]
     ecr_base = f"{account}.dkr.ecr.{REGION}.amazonaws.com"
 
-    results = []
+    # ------------------------------------------------------------------
+    # A2A agents (Triage / Diagnosis / Resolution)
+    # ------------------------------------------------------------------
+    a2a_results = []
     for agent in AGENTS:
         ecr_uri = f"{ecr_base}/agora-{agent['name']}:latest"
         print(f"\nRegistering {agent['name']} ({ecr_uri}) ...")
         try:
             result = _register_one(control, agent, ecr_uri, role_arn)
-            results.append(result)
+            a2a_results.append(result)
         except Exception as e:
             print(f"  ERROR: {e}")
             sys.exit(1)
 
-    print("\n=== A2A agent registration complete ===")
-    print(f"  Capability tag: {CAPABILITY}")
+    # ------------------------------------------------------------------
+    # Gateway Agent (HTTP / AG-UI)
+    # ------------------------------------------------------------------
+    gateway_ecr_uri = f"{ecr_base}/agora-gateway:latest"
+    print(f"\nRegistering gateway ({gateway_ecr_uri}) ...")
+    try:
+        gateway_result = _register_gateway_agent(control, gateway_ecr_uri, role_arn)
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        sys.exit(1)
+
+    print("\n=== Agent registration complete ===")
     print()
-    for r in results:
+    print(f"A2A agents (capability={CAPABILITY!r}):")
+    for r in a2a_results:
         print(f"  {r['name']}")
         print(f"    Runtime ID  : {r['runtime_id']}")
         print(f"    Runtime ARN : {r['runtime_arn']}")
         print(f"    Endpoint ID : {r['endpoint_id']}")
     print()
-    print("Agents can be discovered via:")
+    print("Gateway Agent (capability='gateway', protocol=HTTP):")
+    print(f"  Runtime ID  : {gateway_result['runtime_id']}")
+    print(f"  Runtime ARN : {gateway_result['runtime_arn']}")
+    print(f"  Endpoint ID : {gateway_result['endpoint_id']}")
+    print()
+    print("A2A agents can be discovered via:")
     print("  from common.registry import discover_a2a_agents")
     print("  agents = discover_a2a_agents()")
 
