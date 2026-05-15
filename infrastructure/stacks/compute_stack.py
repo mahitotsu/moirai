@@ -214,6 +214,100 @@ class ComputeStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # ECR repositories — A2A agents (AgentCore Runtime / A2A protocol)
+        # -------------------------------------------------------------------------
+        _agent_names = ["triage", "diagnosis", "resolution"]
+        self.agent_repos: dict[str, ecr.Repository] = {}
+        for _name in _agent_names:
+            _cid = _name.title() + "AgentRepo"
+            _repo = ecr.Repository(
+                self,
+                _cid,
+                repository_name=f"agora-{_name}",
+                removal_policy=cdk.RemovalPolicy.RETAIN,
+                lifecycle_rules=[
+                    ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
+                ],
+            )
+            self.agent_repos[_name] = _repo
+            cdk.CfnOutput(self, f"{_cid}Uri", value=_repo.repository_uri)
+
+        # -------------------------------------------------------------------------
+        # IAM execution role for A2A agents (AgentCore Runtime)
+        # Needs Bedrock InvokeModel + AgentCore invoke + Secrets Manager read
+        # -------------------------------------------------------------------------
+        self.agent_runtime_role = iam.Role(
+            self,
+            "AgentRuntimeRole",
+            role_name="agora-agent-runtime-role",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+        )
+        # Bedrock model invocation
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
+                    "arn:aws:bedrock:*::foundation-model/*",
+                ],
+            )
+        )
+        # AgentCore Runtime invocation (calling MCP servers + other A2A agents)
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock-agentcore:InvokeAgentRuntime"],
+                resources=["*"],
+            )
+        )
+        # AgentCore control plane — Registry discovery
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:GetAgentRuntime",
+                    "bedrock-agentcore:ListAgentRuntimeEndpoints",
+                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                ],
+                resources=["*"],
+            )
+        )
+        # Secrets Manager — read API keys (Resolution agent needs service API key)
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:agora/*"
+                ],
+            )
+        )
+        # CloudWatch Logs
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+        # ECR pull
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:GetAuthorizationToken",
+                ],
+                resources=["*"],
+            )
+        )
+        cdk.CfnOutput(
+            self, "AgentRuntimeRoleArn", value=self.agent_runtime_role.role_arn
+        )
+
+        # -------------------------------------------------------------------------
         # Outputs
         # -------------------------------------------------------------------------
         cdk.CfnOutput(

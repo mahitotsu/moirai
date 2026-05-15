@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #7 A2Aエージェント群 実装・デプロイ
+**次のタスク**: #8 Gateway Agent 実装・デプロイ (AG-UI protocol)
 
 ---
 
@@ -21,10 +21,10 @@
   - [x] 5c. Wikipedia MCP (FastMCP + Wikipedia API)
   - [x] 5d. AWS Docs MCP (awslabs/mcp 流用)
 - [x] 6. AgentCore Registry 登録 (capability タグ付き)
-- [ ] 7. A2Aエージェント群 実装・デプロイ
-  - [ ] 7a. Triage Agent
-  - [ ] 7b. Diagnosis Agent
-  - [ ] 7c. Resolution Agent
+- [x] 7. A2Aエージェント群 実装・デプロイ
+  - [x] 7a. Triage Agent
+  - [x] 7b. Diagnosis Agent
+  - [x] 7c. Resolution Agent
 - [ ] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
 - [ ] 9. AgentCore Memory 設定
 - [ ] 10. React UI 実装

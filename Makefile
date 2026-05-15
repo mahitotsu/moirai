@@ -5,15 +5,17 @@ ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 # make test                       — 全テスト
 # make test-service s=ticket-service — サービス単体テスト
 # make lint                       — ruff + mypy
-# make build img=ticket-service   — ARM64 Dockerビルド
+# make build img=ticket-service   — ARM64 Dockerビルド (services/ or mcp-servers/)
+# make build img=triage           — ARM64 Dockerビルド (agents/)
 # make deploy img=ticket-service  — ECRにプッシュ (承認必要)
 # make cdk-diff                   — CDK差分確認
 # make cdk-deploy                 — CDKデプロイ (承認必要)
 # make gen-specs                  — OpenAPI spec JSONを再生成
 # make register-gateway           — AgentCore Gateway 登録 (承認必要)
 # make register-registry          — AgentCore Registry 登録 (MCP servers, 承認必要)
+# make register-agents            — AgentCore Runtime 登録 (A2A agents, 承認必要)
 
-.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway register-registry
+.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway register-registry register-agents
 
 test:
 	uv run pytest services/ mcp-servers/ agents/ -v --tb=short 2>/dev/null && touch .test-passed || \
@@ -36,6 +38,11 @@ build:
 	@if [ -f services/$(img)/pyproject.toml ]; then \
 	  uv export --package $(img) --no-dev --no-hashes -o services/$(img)/requirements.txt; \
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f services/$(img)/Dockerfile services/$(img); \
+	elif [ -f agents/$(img)/pyproject.toml ]; then \
+	  uv export --package $(img) --no-dev --no-hashes -o agents/$(img)/requirements.txt; \
+	  cp -r agents/common agents/$(img)/common; \
+	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f agents/$(img)/Dockerfile agents/$(img); \
+	  rm -rf agents/$(img)/common; \
 	else \
 	  uv export --package $(img) --no-dev --no-hashes -o mcp-servers/$(img)/requirements.txt; \
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img); \
@@ -74,3 +81,6 @@ register-gateway:
 
 register-registry:
 	uv run python infrastructure/scripts/register_registry.py
+
+register-agents:
+	uv run python infrastructure/scripts/register_agents.py

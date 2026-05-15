@@ -5,10 +5,11 @@ Agents use this module to find MCP servers and other AgentCore Runtimes
 by capability tag, instead of hardcoding endpoint identifiers.
 
 Example:
-    from agents.common.registry import discover_by_capability
+    from common.registry import discover_by_capability
 
     runtimes = discover_by_capability("community-knowledge")
-    # [{"name": "agora-stackoverflow", "runtime_id": "...", "endpoint_id": "..."}, ...]
+    # [{"name": "agora-stackoverflow", "runtime_id": "...", "runtime_arn": "...",
+    #   "endpoint_id": "...", "endpoint_arn": "..."}, ...]
 """
 
 from __future__ import annotations
@@ -39,13 +40,14 @@ def _get_tags(control, arn: str) -> dict[str, str]:
         return {}
 
 
-def _get_first_ready_endpoint(control, runtime_id: str) -> str | None:
+def _get_first_ready_endpoint(control, runtime_id: str) -> dict | None:
+    """Return the first READY endpoint as {"id": ..., "arn": ...}."""
     kwargs: dict = {"agentRuntimeId": runtime_id}
     while True:
         resp = control.list_agent_runtime_endpoints(**kwargs)
         for ep in resp.get("runtimeEndpoints", []):
             if ep.get("status") == "READY":
-                return ep["id"]
+                return {"id": ep["id"], "arn": ep.get("agentRuntimeEndpointArn", "")}
         token = resp.get("nextToken")
         if not token:
             break
@@ -59,7 +61,12 @@ def discover_by_capability(
 ) -> list[dict]:
     """Return all READY AgentCore Runtimes tagged with the given capability.
 
-    Each entry: {"name": str, "runtime_id": str, "runtime_arn": str, "endpoint_id": str | None}
+    Each entry:
+        name          : str — agentRuntimeName
+        runtime_id    : str — agentRuntimeId
+        runtime_arn   : str — agentRuntimeArn (used for invoke_agent_runtime)
+        endpoint_id   : str | None — first READY endpoint name/id
+        endpoint_arn  : str | None — first READY endpoint ARN
     """
     control = boto3.client("bedrock-agentcore-control", region_name=region)
     all_runtimes = _list_all_runtimes(control)
@@ -71,13 +78,46 @@ def discover_by_capability(
         tags = _get_tags(control, rt["agentRuntimeArn"])
         if tags.get("capability") != capability:
             continue
-        endpoint_id = _get_first_ready_endpoint(control, rt["agentRuntimeId"])
+        ep = _get_first_ready_endpoint(control, rt["agentRuntimeId"])
         results.append(
             {
                 "name": rt["agentRuntimeName"],
                 "runtime_id": rt["agentRuntimeId"],
                 "runtime_arn": rt["agentRuntimeArn"],
-                "endpoint_id": endpoint_id,
+                "endpoint_id": ep["id"] if ep else None,
+                "endpoint_arn": ep["arn"] if ep else None,
+            }
+        )
+    return results
+
+
+def discover_a2a_agents(
+    region: str = REGION,
+) -> list[dict]:
+    """Return all READY A2A agents (tagged capability="a2a-agent").
+
+    Each entry has the same shape as discover_by_capability results,
+    plus "agent_type" from the "agent-type" tag.
+    """
+    control = boto3.client("bedrock-agentcore-control", region_name=region)
+    all_runtimes = _list_all_runtimes(control)
+
+    results = []
+    for rt in all_runtimes:
+        if rt.get("status") != "READY":
+            continue
+        tags = _get_tags(control, rt["agentRuntimeArn"])
+        if tags.get("capability") != "a2a-agent":
+            continue
+        ep = _get_first_ready_endpoint(control, rt["agentRuntimeId"])
+        results.append(
+            {
+                "name": rt["agentRuntimeName"],
+                "agent_type": tags.get("agent-type", "unknown"),
+                "runtime_id": rt["agentRuntimeId"],
+                "runtime_arn": rt["agentRuntimeArn"],
+                "endpoint_id": ep["id"] if ep else None,
+                "endpoint_arn": ep["arn"] if ep else None,
             }
         )
     return results
