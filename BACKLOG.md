@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #9 AgentCore Memory 設定（セッション間記憶の永続化）
+**次のタスク**: #10 React UI 実装
 
 ---
 
@@ -26,7 +26,7 @@
   - [x] 7b. Diagnosis Agent
   - [x] 7c. Resolution Agent
 - [x] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
-- [ ] 9. AgentCore Memory 設定
+- [x] 9. AgentCore Memory 設定
 - [ ] 10. React UI 実装
   - [ ] 10a. Chat タブ (AG-UI / SSE)
   - [ ] 10b. Tickets タブ (REST API直接)
