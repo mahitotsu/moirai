@@ -44,7 +44,7 @@
 - [ ] 17. Chat UI 改修・Gateway Agent システムプロンプト更新
   - インシデント起票 UI → アドホック質問・問い合わせ UI に変更
   - 受け付ける質問カテゴリ・禁止操作を Gateway Agent System Prompt に反映
-  - [ ] Bedrock Guardrails 設定 (FIS操作・実システム変更を Denied Topics でブロック)
+  - [x] Bedrock Guardrails 設定 (FIS操作・実システム変更を Denied Topics でブロック)
   - [x] 全エージェントに Prompt Caching (`CacheConfig(strategy="auto")`) を設定
 - [ ] 18. AgentCore Policy 設定 (エージェント間ツールアクセス制御)
   - AgentCore Gateway に Policy Engine を付与
