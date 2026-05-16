@@ -16,8 +16,7 @@ moirai/
 ├── mcp-servers/        FastMCPサーバー (stackoverflow, github-issues, wikipedia)
 ├── agents/             A2Aエージェント (gateway, triage, diagnosis, resolution)
 ├── infrastructure/     AWS CDK (Python)
-├── ui/                 React SPA
-└── scenarios/          デモシナリオYAML
+└── ui/                 React SPA
 ```
 
 ## 技術スタック
