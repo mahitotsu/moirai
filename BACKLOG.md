@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V1 — 動く  
-**次のタスク**: #11 Demo Generator Agent 実装
+**フェーズ**: V2 — 見える  
+**次のタスク**: #11 OTEL計装 (AgentCore Observability)
 
 ---
 
@@ -32,30 +32,34 @@
   - [x] 10b. Tickets タブ (REST API直接)
   - [x] 10c. Knowledge タブ (REST API直接)
 
-## V1.5: デモデータ自動生成
-
-- [ ] 11. Demo Generator Agent 実装・デプロイ (AgentCore Browser)
-- [ ] 12. シナリオを一通り流してDynamoDBにチケットを蓄積
-
 ## V2: 見える
 
-- [ ] 13. OTEL計装 (AgentCore Observability)
-- [ ] 14. AWS Observability MCP群 デプロイ・Registry登録
-  - [ ] 14a. CloudWatch MCP (awslabs/mcp 流用)
-  - [ ] 14b. Cost Explorer MCP (awslabs/mcp 流用)
-- [ ] 15. Analysis Agent 実装・デプロイ
-- [ ] 16. AgentCore Evaluations 設定
-- [ ] 17. React UI Reports タブ追加
+- [ ] 11. OTEL計装 (AgentCore Observability)
+- [ ] 12. AWS Observability MCP群 デプロイ・Registry登録
+  - [ ] 12a. CloudWatch MCP (awslabs/mcp 流用)
+  - [ ] 12b. Cost Explorer MCP (awslabs/mcp 流用)
+- [ ] 13. Analysis Agent 実装・デプロイ
+- [ ] 14. AgentCore Evaluations 設定
+- [ ] 15. React UI Reports タブ追加
+
+## V2.5: FISデモ環境構築
+
+- [ ] 16. 監視対象 Lambda 実装 (fake-api-server + FIS Extension Layer)
+- [ ] 17. EventBridge Scheduler 設定 (定期呼び出しで負荷生成)
+- [ ] 18. CloudWatch アラーム + SNS トピック設定
+- [ ] 19. Bridge Lambda 実装 (アラーム → Agora Gateway Agent チャット POST)
+- [ ] 20. FIS 実験テンプレート作成 (invocation-error シナリオ)
+- [ ] 21. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
 
 ## V3: 進化する
 
-- [ ] 18. DynamoDB Streams 有効化
-- [ ] 19. Lambda (stream consumer) 実装
-- [ ] 20. Runbook Generator Agent 実装・デプロイ
-- [ ] 21. SSM Automation Document テンプレート設計
-- [ ] 22. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
-- [ ] 23. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
-- [ ] 24. React UI Runbooks タブ追加
+- [ ] 22. DynamoDB Streams 有効化
+- [ ] 23. Lambda (stream consumer) 実装
+- [ ] 24. Runbook Generator Agent 実装・デプロイ
+- [ ] 25. SSM Automation Document テンプレート設計
+- [ ] 26. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
+- [ ] 27. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
+- [ ] 28. React UI Runbooks タブ追加
 
 ---
 
