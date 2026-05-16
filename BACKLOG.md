@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V1 — 動く  
-**次のタスク**: #10 React UI 実装
+**次のタスク**: #11 Demo Generator Agent 実装
 
 ---
 
@@ -27,10 +27,10 @@
   - [x] 7c. Resolution Agent
 - [x] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
 - [x] 9. AgentCore Memory 設定
-- [ ] 10. React UI 実装
-  - [ ] 10a. Chat タブ (AG-UI / SSE)
-  - [ ] 10b. Tickets タブ (REST API直接)
-  - [ ] 10c. Knowledge タブ (REST API直接)
+- [x] 10. React UI 実装
+  - [x] 10a. Chat タブ (AG-UI / SSE)
+  - [x] 10b. Tickets タブ (REST API直接)
+  - [x] 10c. Knowledge タブ (REST API直接)
 
 ## V1.5: デモデータ自動生成
 
