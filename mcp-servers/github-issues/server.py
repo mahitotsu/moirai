@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import os
-
 from client import GitHubIssuesClient
 from mcp.server.fastmcp import FastMCP
+from pydantic_settings import BaseSettings
+
+
+class _Settings(BaseSettings):
+    github_token: str = ""
+
 
 mcp = FastMCP("github-issues-mcp")
 _client: GitHubIssuesClient | None = None
@@ -12,7 +16,7 @@ _client: GitHubIssuesClient | None = None
 def _get_client() -> GitHubIssuesClient:
     global _client
     if _client is None:
-        token = os.environ.get("GITHUB_TOKEN")
+        token = _Settings().github_token or None
         _client = GitHubIssuesClient(token=token)
     return _client
 

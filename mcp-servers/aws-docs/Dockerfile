@@ -1,13 +1,13 @@
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
-COPY pyproject.toml .
-RUN uv sync --frozen --no-dev
+COPY pyproject.toml requirements.txt ./
+RUN uv pip install --system --no-cache -r requirements.txt
 
 FROM python:3.12-slim
 WORKDIR /app
-COPY --from=builder /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 ENV FASTMCP_LOG_LEVEL=WARNING
 ENV AWS_DOCUMENTATION_PARTITION=aws
 CMD ["awslabs.aws-documentation-mcp-server"]

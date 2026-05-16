@@ -11,15 +11,19 @@ ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 # make cdk-diff                   — CDK差分確認
 # make cdk-deploy                 — CDKデプロイ (承認必要)
 # make gen-specs                  — OpenAPI spec JSONを再生成
-# make register-gateway           — AgentCore Gateway 登録 (承認必要)
-# make register-registry          — AgentCore Registry 登録 (MCP servers, 承認必要)
-# make register-agents            — AgentCore Runtime 登録 (A2A agents + Gateway Agent, 承認必要)
+# make register-catalog           — AgentCore Registry catalog 登録 (Registry/Record は CDK 未対応)
 
-.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-gateway register-registry register-agents
+.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-catalog
 
 test:
-	uv run pytest services/ mcp-servers/ agents/ -v --tb=short 2>/dev/null && touch .test-passed || \
-	  echo "No tests found yet — add tests under services/, mcp-servers/, agents/"
+	@failed=0; \
+	for svcdir in services/*/; do \
+	  [ -d "$$svcdir" ] || continue; \
+	  find "$$svcdir" -name "test_*.py" | grep -q . || continue; \
+	  uv run pytest "$$svcdir" -v --tb=short 2>/dev/null || failed=1; \
+	done; \
+	uv run pytest mcp-servers/ agents/ -v --tb=short 2>/dev/null || failed=1; \
+	[ "$$failed" -eq 0 ] && touch .test-passed || echo "Tests FAILED"
 
 test-service:
 	uv run pytest services/$(s)/ -v --tb=short && touch .test-passed
@@ -74,13 +78,5 @@ gen-specs:
 	print("Specs generated in infrastructure/specs/")
 	EOF
 
-register-gateway:
-	uv run python infrastructure/scripts/register_gateway.py \
-	  --ticket-url "$(TICKET_URL)" \
-	  --asset-url  "$(ASSET_URL)"
-
-register-registry:
-	uv run python infrastructure/scripts/register_registry.py
-
-register-agents:
-	uv run python infrastructure/scripts/register_agents.py
+register-catalog:
+	uv run --package agora-infrastructure python infrastructure/scripts/register_catalog.py

@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 import json
-import os
 from uuid import uuid4
 
 import boto3
 import httpx
 from common.registry import discover_by_capability
+from pydantic_settings import BaseSettings
 from strands import tool
 
+
+class _Settings(BaseSettings):
+    ticket_service_url: str = ""
+
+
 REGION = "us-east-1"
-TICKET_SERVICE_URL = os.environ.get("TICKET_SERVICE_URL", "")
+TICKET_SERVICE_URL = _Settings().ticket_service_url
 
 # Maps runtime name → (tool_name, extra_args_template)
 _MCP_TOOL_MAP: dict[str, tuple[str, dict]] = {
-    "agora-stackoverflow": ("search_stackoverflow", {"num_results": 5}),
-    "agora-github-issues": ("search_github_issues", {"num_results": 5}),
-    "agora-wikipedia": ("search_wikipedia", {"num_results": 3}),
-    "agora-aws-docs": ("search_documentation", {}),
+    "agora_stackoverflow": ("search_stackoverflow", {"num_results": 5}),
+    "agora_github_issues": ("search_github_issues", {"num_results": 5}),
+    "agora_wikipedia": ("search_wikipedia", {"num_results": 3}),
+    "agora_aws_docs": ("search_documentation", {}),
 }
 
 

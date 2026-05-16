@@ -317,8 +317,49 @@ class ComputeStack(cdk.Stack):
                 resources=["*"],
             )
         )
+        # AgentCore Memory — retrieve and create memory records
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:RetrieveMemoryRecords",
+                    "bedrock-agentcore:BatchCreateMemoryRecords",
+                    "bedrock-agentcore:GetMemory",
+                    "bedrock-agentcore:ListMemoryRecords",
+                ],
+                resources=["*"],
+            )
+        )
         cdk.CfnOutput(
             self, "AgentRuntimeRoleArn", value=self.agent_runtime_role.role_arn
+        )
+
+        # -------------------------------------------------------------------------
+        # IAM execution role for AgentCore Memory (LLM-based extraction jobs)
+        # -------------------------------------------------------------------------
+        self.memory_execution_role = iam.Role(
+            self,
+            "MemoryExecutionRole",
+            role_name="agora-memory-execution-role",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+        )
+        self.memory_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
+                    "arn:aws:bedrock:*::foundation-model/*",
+                ],
+            )
+        )
+        self.memory_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+                resources=["*"],
+            )
+        )
+        cdk.CfnOutput(
+            self, "MemoryExecutionRoleArn", value=self.memory_execution_role.role_arn
         )
 
         # -------------------------------------------------------------------------

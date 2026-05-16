@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import os
-
 import httpx
+from pydantic_settings import BaseSettings
 from strands import tool
 
-TICKET_SERVICE_URL = os.environ.get("TICKET_SERVICE_URL", "")
-_API_KEY_SECRET_NAME = os.environ.get("API_KEY_SECRET_NAME", "agora/services-api-key")
+
+class _Settings(BaseSettings):
+    ticket_service_url: str = ""
+    api_key_secret_name: str = "agora/services-api-key"
+
+
+_s = _Settings()
+TICKET_SERVICE_URL = _s.ticket_service_url
+_API_KEY_SECRET_NAME = _s.api_key_secret_name
 
 
 def _get_api_key() -> str:
