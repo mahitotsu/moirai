@@ -12,10 +12,12 @@ from strands import tool
 
 class _Settings(BaseSettings):
     ticket_service_url: str = ""
+    aws_region: str = "us-east-1"
 
 
-REGION = "us-east-1"
-TICKET_SERVICE_URL = _Settings().ticket_service_url
+_s = _Settings()
+REGION = _s.aws_region
+TICKET_SERVICE_URL = _s.ticket_service_url
 
 # Maps runtime name → (tool_name, extra_args_template)
 _MCP_TOOL_MAP: dict[str, tuple[str, dict]] = {

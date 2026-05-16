@@ -23,8 +23,14 @@ from __future__ import annotations
 import json
 
 import boto3
+from pydantic_settings import BaseSettings
 
-REGION = "us-east-1"
+
+class _Settings(BaseSettings):
+    aws_region: str = "us-east-1"
+
+
+REGION = _Settings().aws_region
 REGISTRY_NAME = "agora_registry"
 _ACTIVE_STATUSES = {"DRAFT", "APPROVED"}
 

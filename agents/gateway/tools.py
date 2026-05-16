@@ -5,9 +5,15 @@ from uuid import uuid4
 
 import boto3
 from common.registry import discover_a2a_agents
+from pydantic_settings import BaseSettings
 from strands import tool
 
-REGION = "us-east-1"
+
+class _Settings(BaseSettings):
+    aws_region: str = "us-east-1"
+
+
+REGION = _Settings().aws_region
 
 # Cache agent ARNs per process to avoid repeated Registry lookups
 _agent_arn_cache: dict[str, str] = {}

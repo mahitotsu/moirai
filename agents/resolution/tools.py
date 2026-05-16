@@ -8,11 +8,13 @@ from strands import tool
 class _Settings(BaseSettings):
     ticket_service_url: str = ""
     api_key_secret_name: str = "agora/services-api-key"
+    aws_region: str = "us-east-1"
 
 
 _s = _Settings()
 TICKET_SERVICE_URL = _s.ticket_service_url
 _API_KEY_SECRET_NAME = _s.api_key_secret_name
+_REGION = _s.aws_region
 
 
 def _get_api_key() -> str:
@@ -21,7 +23,7 @@ def _get_api_key() -> str:
     if _API_KEY_CACHE:
         return _API_KEY_CACHE
     import boto3
-    sm = boto3.client("secretsmanager", region_name="us-east-1")
+    sm = boto3.client("secretsmanager", region_name=_REGION)
     _API_KEY_CACHE = sm.get_secret_value(SecretId=_API_KEY_SECRET_NAME)["SecretString"]
     return _API_KEY_CACHE
 

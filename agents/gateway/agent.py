@@ -15,11 +15,13 @@ from tools import run_diagnosis, run_resolution, run_triage
 
 class _Settings(BaseSettings):
     memory_id: str = ""
+    aws_region: str = "us-east-1"
 
 
+_s = _Settings()
 MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-REGION = "us-east-1"
-MEMORY_ID = _Settings().memory_id
+REGION = _s.aws_region
+MEMORY_ID = _s.memory_id
 
 _SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
 
