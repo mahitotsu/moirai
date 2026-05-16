@@ -45,9 +45,9 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 
 [FIS 障害注入]
   FIS 実験テンプレートを起動
-  → Lambda に FIS Extension Layer 経由でエラー率を注入
-  → 呼び出しエラー率が急上昇
-  → CloudWatch アラームが ALARM 状態に遷移
+  → DynamoDB GetItem API に ProvisionedThroughputExceededException を注入
+  → fake-api-server Lambda が boto3 ClientError で失敗し始める
+  → CloudWatch Lambda/Errors が急上昇、アラームが ALARM 状態に遷移
   → SNS トピックに通知
 
 [イベント駆動レイヤー]
@@ -125,9 +125,10 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 ```
 ┌─────────────────────────────────────────────────────┐
 │ 監視対象システム                                      │
-│   fake-api-server (Lambda + FIS Extension Layer)     │
+│   fake-api-server (Lambda)                           │
+│     → DynamoDB GetItem (agora-assets) を定期読み取り │
 │   EventBridge Scheduler → 定期実行 → メトリクス生成  │
-│   FIS 実験テンプレート  → エラー率注入               │
+│   FIS 実験テンプレート  → DynamoDB API にエラー注入  │
 └─────────────────────────────────────────────────────┘
       ↓ 異常検知
 
@@ -231,10 +232,10 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 
 | コンポーネント | 役割 | 実装 |
 |---|---|---|
-| fake-api-server | デモ用の被監視Lambdaサービス。FIS Extension Layer を組み込み | Lambda (Python) |
+| fake-api-server | デモ用の被監視Lambdaサービス。DynamoDB（agora-assets）を GetItem で定期読み取りし、正常メトリクスを生成する | Lambda (Python) |
 | EventBridge Scheduler | fake-api-server を定期呼び出しして CloudWatch メトリクスを生成。**デフォルト無効**。デモ・データ蓄積時のみ有効化する | EventBridge Scheduler |
 | CloudWatch アラーム | エラー率が閾値を超えたときにSNSへ通知 | CloudWatch + SNS |
-| FIS 実験テンプレート | Lambda Extension 経由でエラーを注入し、障害シナリオを再現 | AWS FIS |
+| FIS 実験テンプレート | DynamoDB API レベルで `ProvisionedThroughputExceededException` を注入し、Lambda のエラー率を急上昇させる | AWS FIS |
 
 **デモ制御コマンド**
 
@@ -320,7 +321,7 @@ SNS 通知受信
 | フロントエンド | React |
 | データストア | DynamoDB（Ticket / Asset / Reports / Knowledge） |
 | ランブック | AWS Systems Manager Automation Documents |
-| 監視対象システム | Lambda + FIS Extension Layer + EventBridge Scheduler |
+| 監視対象システム | Lambda (DynamoDB GetItem) + EventBridge Scheduler + AWS FIS |
 | アラーム連携 | CloudWatch アラーム + SNS + Bridge Lambda |
 | 知識進化 | DynamoDB Streams + Lambda (V3) |
 | AWSリージョン | us-east-1 |
@@ -342,11 +343,11 @@ SNS 通知受信
 - AgentCore Memory
 
 **V2: 自動化する**
-- 監視対象システム（fake-api-server + FIS Extension Layer）
+- 監視対象システム（fake-api-server: DynamoDB GetItem を定期呼び出し）
 - EventBridge Scheduler（定期実行・メトリクス生成・デフォルト無効）
 - CloudWatch アラーム + SNS トピック
 - Bridge Lambda（アラーム → 自動起票 + エージェント起動）
-- FIS 実験テンプレート（障害注入シナリオ）
+- FIS 実験テンプレート（DynamoDB API レベルでのスロットリングエラー注入）
 - CloudWatch MCP（Diagnosis Agent が障害メトリクスを参照するため）
 - Makefile デモ制御ターゲット（demo-start / demo-inject / demo-stop）
 - Chat UI 改修・Gateway Agent システムプロンプト更新（アドホック質問・問い合わせ対応）
@@ -393,11 +394,11 @@ SNS 通知受信
 
 ### V2: 自動化する
 
-11. 監視対象 Lambda 実装（fake-api-server + FIS Extension Layer）
+11. 監視対象 Lambda 実装（fake-api-server: DynamoDB GetItem を定期呼び出し）
 12. EventBridge Scheduler 設定（定期呼び出しで負荷生成）
 13. CloudWatch アラーム + SNS トピック設定
 14. Bridge Lambda 実装（アラーム → Ticket 自動起票 + Gateway Agent POST）
-15. FIS 実験テンプレート作成（invocation-error シナリオ）
+15. FIS 実験テンプレート作成（inject-api-throttle-error → dynamodb:GetItem）
 16. CloudWatch MCP デプロイ・Registry登録（Diagnosis Agent が障害メトリクスを参照するため）
 17. Chat UI 改修・Gateway Agent システムプロンプト更新（インシデント起票 → アドホック質問・問い合わせ、禁止操作の明示）
 18. AgentCore Policy 設定（Gateway に Policy Engine 付与、エージェント別ツールアクセス制御）
