@@ -108,10 +108,6 @@ class AgentCoreStack(cdk.Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        account = self.account
-        region = self.region
-        ecr_base = f"{account}.dkr.ecr.{region}.amazonaws.com"
-
         # -------------------------------------------------------------------------
         # MCP server runtimes (Community Knowledge)
         # -------------------------------------------------------------------------
@@ -126,7 +122,7 @@ class AgentCoreStack(cdk.Stack):
                 description=srv["description"],
                 agent_runtime_artifact=agentcore.CfnRuntime.AgentRuntimeArtifactProperty(
                     container_configuration=agentcore.CfnRuntime.ContainerConfigurationProperty(
-                        container_uri=f"{ecr_base}/agora-{srv['name']}:latest",
+                        container_uri=compute.agent_images[srv["name"]].image_uri,
                     ),
                 ),
                 role_arn=compute.mcp_runtime_role.role_arn,
@@ -172,7 +168,7 @@ class AgentCoreStack(cdk.Stack):
                 description=agent["description"],
                 agent_runtime_artifact=agentcore.CfnRuntime.AgentRuntimeArtifactProperty(
                     container_configuration=agentcore.CfnRuntime.ContainerConfigurationProperty(
-                        container_uri=f"{ecr_base}/agora-{agent['name']}:latest",
+                        container_uri=compute.agent_images[agent["name"]].image_uri,
                     ),
                 ),
                 role_arn=compute.agent_runtime_role.role_arn,
@@ -251,7 +247,7 @@ class AgentCoreStack(cdk.Stack):
             description=gw_agent["description"],
             agent_runtime_artifact=agentcore.CfnRuntime.AgentRuntimeArtifactProperty(
                 container_configuration=agentcore.CfnRuntime.ContainerConfigurationProperty(
-                    container_uri=f"{ecr_base}/agora-gateway:latest",
+                    container_uri=compute.agent_images["gateway"].image_uri,
                 ),
             ),
             role_arn=compute.agent_runtime_role.role_arn,

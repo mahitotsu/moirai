@@ -29,7 +29,7 @@ test-service:
 	uv run pytest services/$(s)/ -v --tb=short && touch .test-passed
 
 lint:
-	uv run ruff check services/ mcp-servers/ agents/ infrastructure/
+	uv run ruff check services/ mcp-servers/ agents/ infrastructure/ --exclude infrastructure/cdk.out
 	@found=0; \
 	for svcdir in services/*/ mcp-servers/*/ agents/*/; do \
 	  [ -d "$$svcdir" ] || continue; \
@@ -44,9 +44,7 @@ build:
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f services/$(img)/Dockerfile services/$(img); \
 	elif [ -f agents/$(img)/pyproject.toml ]; then \
 	  uv export --package $(img) --no-dev --no-hashes -o agents/$(img)/requirements.txt; \
-	  cp -r agents/common agents/$(img)/common; \
-	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f agents/$(img)/Dockerfile agents/$(img); \
-	  rm -rf agents/$(img)/common; \
+	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f agents/$(img)/Dockerfile agents/; \
 	else \
 	  uv export --package $(img) --no-dev --no-hashes -o mcp-servers/$(img)/requirements.txt; \
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img); \

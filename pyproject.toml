@@ -9,6 +9,7 @@ members = [
     "mcp-servers/*",
     "agents/*",
     "infrastructure",
+    "ui",
 ]
 
 [dependency-groups]

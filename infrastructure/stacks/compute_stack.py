@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import aws_cdk as cdk
-import aws_cdk.aws_ecr as ecr
+import aws_cdk.aws_cloudfront as cloudfront
+import aws_cdk.aws_cloudfront_origins as origins
+import aws_cdk.aws_ecr_assets as ecr_assets
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
+import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_secretsmanager as secretsmanager
+from aws_cdk.aws_s3_deployment import BucketDeployment, Source
 from constructs import Construct
+from pydantic_settings import BaseSettings
+
+_UI_DIR = str(Path(__file__).parent.parent.parent / "ui")
+
+
+class _Settings(BaseSettings):
+    # ARN of the Gateway Agent AgentCore Runtime — injected after first deploy.
+    # Get from CDK outputs: AgoraAgentCoreStack.AgoraGatewayRuntimeArn
+    agent_runtime_arn: str = ""
+
+
+_AGENT_RUNTIME_ARN = _Settings().agent_runtime_arn
 
 
 class ComputeStack(cdk.Stack):
@@ -13,46 +31,41 @@ class ComputeStack(cdk.Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # -------------------------------------------------------------------------
-        # ECR repositories — ARM64 Docker images pushed by `make build/deploy`
+        # AgentCore Runtime images — CDK builds and pushes all images automatically.
+        # DockerImageAsset handles build + push to CDK-managed ECR bootstrap repo.
+        # agent_core_stack.py consumes image_uri for CfnRuntime container_uri.
         # -------------------------------------------------------------------------
-        self.ticket_service_repo = ecr.Repository(
-            self,
-            "TicketServiceRepo",
-            repository_name="agora-ticket-service",
-            removal_policy=cdk.RemovalPolicy.RETAIN,
-            lifecycle_rules=[
-                ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
-            ],
-        )
+        _AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
+        _MCP_DIR = Path(__file__).parent.parent.parent / "mcp-servers"
 
-        self.asset_service_repo = ecr.Repository(
-            self,
-            "AssetServiceRepo",
-            repository_name="agora-asset-service",
-            removal_policy=cdk.RemovalPolicy.RETAIN,
-            lifecycle_rules=[
-                ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
-            ],
-        )
+        self.agent_images: dict[str, ecr_assets.DockerImageAsset] = {}
 
-        # -------------------------------------------------------------------------
-        # ECR repositories — Community Knowledge MCP servers (AgentCore Runtime)
-        # -------------------------------------------------------------------------
-        _mcp_names = ["stackoverflow", "github-issues", "wikipedia", "aws-docs"]
-        self.mcp_repos: dict[str, ecr.Repository] = {}
-        for _name in _mcp_names:
-            _cid = _name.replace("-", " ").title().replace(" ", "") + "McpRepo"
-            _repo = ecr.Repository(
+        for _name in ["stackoverflow", "github-issues", "wikipedia", "aws-docs"]:
+            _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
+            self.agent_images[_name] = ecr_assets.DockerImageAsset(
                 self,
                 _cid,
-                repository_name=f"agora-{_name}",
-                removal_policy=cdk.RemovalPolicy.RETAIN,
-                lifecycle_rules=[
-                    ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
-                ],
+                directory=str(_MCP_DIR / _name),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             )
-            self.mcp_repos[_name] = _repo
-            cdk.CfnOutput(self, f"{_cid}Uri", value=_repo.repository_uri)
+
+        for _name in ["triage", "diagnosis", "resolution"]:
+            _cid = _name.title() + "AgentImage"
+            self.agent_images[_name] = ecr_assets.DockerImageAsset(
+                self,
+                _cid,
+                directory=str(_AGENTS_DIR),
+                file=f"{_name}/Dockerfile",
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            )
+
+        self.agent_images["gateway"] = ecr_assets.DockerImageAsset(
+            self,
+            "GatewayAgentImage",
+            directory=str(_AGENTS_DIR),
+            file="gateway/Dockerfile",
+            platform=ecr_assets.Platform.LINUX_ARM64,
+        )
 
         # -------------------------------------------------------------------------
         # IAM execution role for AgentCore Runtime (MCP servers)
@@ -153,23 +166,32 @@ class ComputeStack(cdk.Stack):
             )
         )
 
+        # Allow chat-proxy Lambda to invoke the Gateway Agent AgentCore Runtime
+        self.lambda_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock-agentcore:InvokeAgentRuntime"],
+                resources=["*"],
+            )
+        )
+
         # -------------------------------------------------------------------------
-        # Lambda functions (container image + Lambda Web Adapter)
-        # Images are updated via `make build img=... && make deploy img=...`
-        # then `make lambda-update img=...`
+        # Lambda functions — CDK builds and pushes all images automatically.
+        # `cdk deploy` handles build + push + Lambda create/update in one step.
         # -------------------------------------------------------------------------
         common_env = {
             "AWS_LWA_PORT": "8080",
             "AWS_LWA_READINESS_CHECK_PATH": "/health",
         }
 
+        _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
+
         self.ticket_fn = lambda_.DockerImageFunction(
             self,
             "TicketServiceFn",
             function_name="agora-ticket-service",
-            code=lambda_.DockerImageCode.from_ecr(
-                self.ticket_service_repo,
-                tag_or_digest="latest",
+            code=lambda_.DockerImageCode.from_image_asset(
+                str(_SERVICES_DIR / "ticket-service"),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=lambda_.Architecture.ARM_64,
             memory_size=512,
@@ -190,9 +212,9 @@ class ComputeStack(cdk.Stack):
             self,
             "AssetServiceFn",
             function_name="agora-asset-service",
-            code=lambda_.DockerImageCode.from_ecr(
-                self.asset_service_repo,
-                tag_or_digest="latest",
+            code=lambda_.DockerImageCode.from_image_asset(
+                str(_SERVICES_DIR / "asset-service"),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=lambda_.Architecture.ARM_64,
             memory_size=512,
@@ -214,41 +236,177 @@ class ComputeStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
-        # ECR repository — Gateway Agent (AgentCore Runtime / HTTP / AG-UI)
+        # Chat Proxy Lambda — CDK builds and pushes the image automatically.
+        # No manual `make deploy img=chat-proxy` needed; image is an ECR asset.
         # -------------------------------------------------------------------------
-        self.gateway_agent_repo = ecr.Repository(
-            self,
-            "GatewayAgentRepo",
-            repository_name="agora-gateway",
-            removal_policy=cdk.RemovalPolicy.RETAIN,
-            lifecycle_rules=[
-                ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
-            ],
+        _CHAT_PROXY_DIR = str(
+            Path(__file__).parent.parent.parent / "services" / "chat-proxy"
         )
-        cdk.CfnOutput(self, "GatewayAgentRepoUri", value=self.gateway_agent_repo.repository_uri)
+
+        self.chat_proxy_fn = lambda_.DockerImageFunction(
+            self,
+            "ChatProxyFn",
+            function_name="agora-chat-proxy",
+            code=lambda_.DockerImageCode.from_image_asset(
+                _CHAT_PROXY_DIR,
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=lambda_.Architecture.ARM_64,
+            memory_size=512,
+            # Gateway Agent can take up to ~60 s for Triage→Diagnosis→Resolution
+            timeout=cdk.Duration.seconds(120),
+            role=self.lambda_role,
+            environment={
+                **common_env,
+                "AGENT_RUNTIME_ARN": _AGENT_RUNTIME_ARN,
+            },
+        )
+
+        # AWS_IAM auth — only CloudFront (OAC) is allowed to invoke this URL
+        self.chat_proxy_url = self.chat_proxy_fn.add_function_url(
+            auth_type=lambda_.FunctionUrlAuthType.AWS_IAM,
+        )
 
         # -------------------------------------------------------------------------
-        # ECR repositories — A2A agents (AgentCore Runtime / A2A protocol)
+        # S3 bucket — React SPA static files (no public access)
         # -------------------------------------------------------------------------
-        _agent_names = ["triage", "diagnosis", "resolution"]
-        self.agent_repos: dict[str, ecr.Repository] = {}
-        for _name in _agent_names:
-            _cid = _name.title() + "AgentRepo"
-            _repo = ecr.Repository(
-                self,
-                _cid,
-                repository_name=f"agora-{_name}",
-                removal_policy=cdk.RemovalPolicy.RETAIN,
-                lifecycle_rules=[
-                    ecr.LifecycleRule(max_image_count=5, description="Keep last 5 images")
-                ],
-            )
-            self.agent_repos[_name] = _repo
-            cdk.CfnOutput(self, f"{_cid}Uri", value=_repo.repository_uri)
+        self.ui_bucket = s3.Bucket(
+            self,
+            "UiBucket",
+            bucket_name=f"agora-ui-{self.account}",
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+        )
+
+        # -------------------------------------------------------------------------
+        # CloudFront Function — strip /api prefix before forwarding to Lambda
+        # /api/tickets?status=open  →  /tickets?status=open
+        # -------------------------------------------------------------------------
+        strip_api_fn = cloudfront.Function(
+            self,
+            "StripApiPrefix",
+            code=cloudfront.FunctionCode.from_inline(
+                "function handler(event){"
+                "var r=event.request;"
+                "if(r.uri.startsWith('/api/')){"
+                "r.uri=r.uri.substring(4);}"
+                "return r;}"
+            ),
+            runtime=cloudfront.FunctionRuntime.JS_2_0,
+        )
+
+        # -------------------------------------------------------------------------
+        # CloudFront origins
+        # -------------------------------------------------------------------------
+
+        # Origin 1: S3 (OAC — blocks all direct S3 access)
+        ui_origin = origins.S3BucketOrigin.with_origin_access_control(self.ui_bucket)
+
+        # Origin 2: chat-proxy Lambda Function URL (OAC with AWS_IAM)
+        # CDK auto-grants lambda:InvokeFunctionUrl to CloudFront service principal
+        chat_origin = origins.FunctionUrlOrigin.with_origin_access_control(
+            self.chat_proxy_url,
+        )
+
+        # Origin 3: ticket-service Lambda Function URL (public auth=NONE, key via custom header)
+        # Extracts domain from "https://xxxx.lambda-url…/" → "xxxx.lambda-url…"
+        ticket_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.ticket_url.url))
+        ticket_origin = origins.HttpOrigin(
+            ticket_domain,
+            custom_headers={
+                # Inject API key so the browser never needs to know it
+                "x-api-key": self.services_api_key_secret.secret_value.unsafe_unwrap(),
+            },
+            protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+        )
+
+        # -------------------------------------------------------------------------
+        # CloudFront Distribution
+        # Behaviors (evaluated in order from most to least specific):
+        #   /api/chat        → chat-proxy Lambda  (OAC / AWS_IAM)
+        #   /api/tickets*    → ticket-service Lambda (custom header, path rewrite)
+        #   /*               → S3  (OAC, SPA fallback on 403/404)
+        # -------------------------------------------------------------------------
+        self.ui_distribution = cloudfront.Distribution(
+            self,
+            "UiDistribution",
+            # Default: S3 → React SPA
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=ui_origin,
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                cache_policy=cloudfront.CachePolicy.CACHING_OPTIMIZED,
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+            ),
+            additional_behaviors={
+                # Chat API — POST, no cache, OAC-signed to Lambda
+                "/api/chat": cloudfront.BehaviorOptions(
+                    origin=chat_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                ),
+                # Ticket API — GET/POST/PATCH, no cache, path rewrite /api → ""
+                "/api/tickets*": cloudfront.BehaviorOptions(
+                    origin=ticket_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                    function_associations=[
+                        cloudfront.FunctionAssociation(
+                            event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                            function=strip_api_fn,
+                        )
+                    ],
+                ),
+            },
+            default_root_object="index.html",
+            # SPA fallback — serve index.html for React Router routes
+            error_responses=[
+                cloudfront.ErrorResponse(
+                    http_status=403,
+                    response_http_status=200,
+                    response_page_path="/index.html",
+                ),
+                cloudfront.ErrorResponse(
+                    http_status=404,
+                    response_http_status=200,
+                    response_page_path="/index.html",
+                ),
+            ],
+        )
+
+        # -------------------------------------------------------------------------
+        # BucketDeployment — build React SPA and upload to S3
+        # CDK builds the app in a Docker container; no pre-build step needed.
+        # Also creates a CloudFront invalidation after each deploy.
+        # -------------------------------------------------------------------------
+        BucketDeployment(
+            self,
+            "UiDeployment",
+            sources=[
+                Source.asset(
+                    path=_UI_DIR,
+                    bundling=cdk.BundlingOptions(
+                        image=cdk.DockerImage.from_registry("node:20-alpine"),
+                        command=[
+                            "sh",
+                            "-c",
+                            "npm ci && npm run build && cp -r dist/. /asset-output/",
+                        ],
+                        environment={},
+                    ),
+                )
+            ],
+            destination_bucket=self.ui_bucket,
+            distribution=self.ui_distribution,
+            distribution_paths=["/*"],
+        )
 
         # -------------------------------------------------------------------------
         # IAM execution role for A2A agents (AgentCore Runtime)
-        # Needs Bedrock InvokeModel + AgentCore invoke + Secrets Manager read
         # -------------------------------------------------------------------------
         self.agent_runtime_role = iam.Role(
             self,
@@ -256,7 +414,6 @@ class ComputeStack(cdk.Stack):
             role_name="agora-agent-runtime-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
         )
-        # Bedrock model invocation
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
@@ -267,14 +424,12 @@ class ComputeStack(cdk.Stack):
                 ],
             )
         )
-        # AgentCore Runtime invocation (calling MCP servers + other A2A agents)
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["bedrock-agentcore:InvokeAgentRuntime"],
                 resources=["*"],
             )
         )
-        # AgentCore control plane — Registry discovery
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -286,7 +441,6 @@ class ComputeStack(cdk.Stack):
                 resources=["*"],
             )
         )
-        # Secrets Manager — read API keys (Resolution agent needs service API key)
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["secretsmanager:GetSecretValue"],
@@ -295,7 +449,6 @@ class ComputeStack(cdk.Stack):
                 ],
             )
         )
-        # CloudWatch Logs
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -306,7 +459,6 @@ class ComputeStack(cdk.Stack):
                 resources=["*"],
             )
         )
-        # ECR pull
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -317,7 +469,6 @@ class ComputeStack(cdk.Stack):
                 resources=["*"],
             )
         )
-        # AgentCore Memory — retrieve and create memory records
         self.agent_runtime_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -366,20 +517,14 @@ class ComputeStack(cdk.Stack):
         # Outputs
         # -------------------------------------------------------------------------
         cdk.CfnOutput(
-            self, "TicketServiceRepoUri", value=self.ticket_service_repo.repository_uri
-        )
-        cdk.CfnOutput(
-            self, "AssetServiceRepoUri", value=self.asset_service_repo.repository_uri
-        )
-        cdk.CfnOutput(
             self, "ServicesApiKeySecretArn", value=self.services_api_key_secret.secret_arn
         )
+        cdk.CfnOutput(self, "TicketFunctionUrl", value=self.ticket_url.url)
+        cdk.CfnOutput(self, "AssetFunctionUrl", value=self.asset_url.url)
+        cdk.CfnOutput(self, "GatewayExecutionRoleArn", value=self.gateway_role.role_arn)
+        cdk.CfnOutput(self, "UiBucketName", value=self.ui_bucket.bucket_name)
         cdk.CfnOutput(
-            self, "TicketFunctionUrl", value=self.ticket_url.url
-        )
-        cdk.CfnOutput(
-            self, "AssetFunctionUrl", value=self.asset_url.url
-        )
-        cdk.CfnOutput(
-            self, "GatewayExecutionRoleArn", value=self.gateway_role.role_arn
+            self,
+            "UiUrl",
+            value=f"https://{self.ui_distribution.domain_name}",
         )
