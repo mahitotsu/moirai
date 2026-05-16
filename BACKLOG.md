@@ -44,25 +44,36 @@
 - [ ] 17. Chat UI 改修・Gateway Agent システムプロンプト更新
   - インシデント起票 UI → アドホック質問・問い合わせ UI に変更
   - 受け付ける質問カテゴリ・禁止操作を Gateway Agent System Prompt に反映
-- [ ] 18. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
+  - [ ] Bedrock Guardrails 設定 (FIS操作・実システム変更を Denied Topics でブロック)
+  - [x] 全エージェントに Prompt Caching (`CacheConfig(strategy="auto")`) を設定
+- [ ] 18. AgentCore Policy 設定 (エージェント間ツールアクセス制御)
+  - AgentCore Gateway に Policy Engine を付与
+  - Triage Agent: `search_*` のみ許可、チケット作成・更新は禁止
+  - Diagnosis Agent: `search_*` のみ許可、書き込み系ツールは全禁止
+  - Resolution Agent: `create_ticket` / `update_ticket_resolution` のみ許可
+- [ ] 19. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
 
 ## V3: 見える
 
-- [ ] 19. OTEL計装 (AgentCore Observability)
-- [ ] 20. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
-- [ ] 21. Analysis Agent 実装・デプロイ
-- [ ] 22. AgentCore Evaluations 設定
-- [ ] 23. React UI Reports タブ追加
+- [ ] 20. OTEL計装 (AgentCore Observability)
+- [ ] 21. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
+- [ ] 22. Analysis Agent 実装・デプロイ
+- [ ] 23. AgentCore Evaluations 設定
+  - Online 評価: Gateway Agent に HELPFULNESS / FAITHFULNESS
+  - Online 評価: Triage Agent に TOOL_SELECTION_ACCURACY
+  - Online 評価: Diagnosis Agent に CORRECTNESS
+  - Online 評価: Resolution Agent に FAITHFULNESS
+- [ ] 24. React UI Reports タブ追加
 
 ## V4: 進化する
 
-- [ ] 24. DynamoDB Streams 有効化
-- [ ] 25. Lambda (stream consumer) 実装
-- [ ] 26. Runbook Generator Agent 実装・デプロイ
-- [ ] 27. SSM Automation Document テンプレート設計
-- [ ] 28. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
-- [ ] 29. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
-- [ ] 30. React UI Runbooks タブ追加
+- [ ] 25. DynamoDB Streams 有効化
+- [ ] 26. Lambda (stream consumer) 実装
+- [ ] 27. Runbook Generator Agent 実装・デプロイ
+- [ ] 28. SSM Automation Document テンプレート設計
+- [ ] 29. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
+- [ ] 30. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
+- [ ] 31. React UI Runbooks タブ追加
 
 ---
 

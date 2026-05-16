@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import aws_cdk as cdk
+import aws_cdk.aws_bedrock as bedrock
 import aws_cdk.aws_cloudfront as cloudfront
 import aws_cdk.aws_cloudfront_origins as origins
 import aws_cdk.aws_ecr_assets as ecr_assets
@@ -406,6 +407,66 @@ class ComputeStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # Bedrock Guardrail — Gateway Agent (Chat UI 向け)
+        # Denied topics: FIS 実験の操作、Lambda 等の実システムへの変更実行
+        # -------------------------------------------------------------------------
+        self.guardrail = bedrock.CfnGuardrail(
+            self,
+            "GatewayGuardrail",
+            name="agora-gateway-guardrail",
+            description="Gateway Agent 用 Guardrail — FIS 操作と実システム変更をブロック",
+            blocked_input_messaging=(
+                "申し訳ありませんが、その操作はサポートされていません。"
+                "Agora はシステム変更の実行や FIS 実験の操作は行いません。"
+                "提案・分析に関するご質問はお気軽にどうぞ。"
+            ),
+            blocked_outputs_messaging=(
+                "申し訳ありませんが、その応答はポリシーに違反しています。"
+                "提案・分析に関するご質問はお気軽にどうぞ。"
+            ),
+            topic_policy_config=bedrock.CfnGuardrail.TopicPolicyConfigProperty(
+                topics_config=[
+                    bedrock.CfnGuardrail.TopicConfigProperty(
+                        name="FisExperimentControl",
+                        definition=(
+                            "AWS FIS の実験テンプレートを起動・停止・変更・削除する操作。"
+                            "障害注入の開始・停止・スケジュール設定を含む。"
+                        ),
+                        examples=[
+                            "FIS 実験を開始してください",
+                            "Start the FIS experiment",
+                            "Stop the fault injection",
+                            "障害注入を止めて",
+                            "Run the chaos experiment",
+                        ],
+                        type="DENY",
+                    ),
+                    bedrock.CfnGuardrail.TopicConfigProperty(
+                        name="SystemChangeExecution",
+                        definition=(
+                            "Lambda 関数の再起動・設定変更・デプロイ、EC2 操作、"
+                            "DB や IAM ポリシーの変更など実システムへの直接変更を実行する操作。"
+                        ),
+                        examples=[
+                            "Lambda を再起動してください",
+                            "Restart the Lambda function",
+                            "Deploy the new version",
+                            "設定を変更して",
+                            "Apply this configuration change to production",
+                        ],
+                        type="DENY",
+                    ),
+                ]
+            ),
+            tags=[cdk.CfnTag(key="project", value="agora")],
+        )
+        self.guardrail_id = self.guardrail.attr_guardrail_id
+        self.guardrail_version = "DRAFT"
+
+        cdk.CfnOutput(self, "GuardrailId", value=self.guardrail_id)
+        cdk.CfnOutput(self, "GuardrailArn", value=self.guardrail.attr_guardrail_arn)
+
+        # -------------------------------------------------------------------------
         # IAM execution role for A2A agents (AgentCore Runtime)
         # -------------------------------------------------------------------------
         self.agent_runtime_role = iam.Role(
@@ -467,6 +528,14 @@ class ComputeStack(cdk.Stack):
                     "ecr:GetAuthorizationToken",
                 ],
                 resources=["*"],
+            )
+        )
+        self.agent_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:ApplyGuardrail"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}:{self.account}:guardrail/*"
+                ],
             )
         )
         self.agent_runtime_role.add_to_policy(

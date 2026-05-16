@@ -255,7 +255,11 @@ class AgentCoreStack(cdk.Stack):
                 network_mode="PUBLIC",
             ),
             protocol_configuration=gw_agent["protocol"],
-            environment_variables={"MEMORY_ID": self.memory.attr_memory_id},
+            environment_variables={
+                "MEMORY_ID": self.memory.attr_memory_id,
+                "GUARDRAIL_ID": compute.guardrail_id,
+                "GUARDRAIL_VERSION": compute.guardrail_version,
+            },
             tags={"capability": gw_agent["capability"], "project": "agora"},
         )
         agentcore.CfnRuntimeEndpoint(

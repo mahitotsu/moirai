@@ -9,13 +9,15 @@ import boto3
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from pydantic_settings import BaseSettings
 from strands import Agent
-from strands.models import BedrockModel
+from strands.models import BedrockModel, CacheConfig
 from tools import run_diagnosis, run_resolution, run_triage
 
 
 class _Settings(BaseSettings):
     memory_id: str = ""
     aws_region: str = "us-east-1"
+    guardrail_id: str = ""
+    guardrail_version: str = "DRAFT"
 
 
 _s = _Settings()
@@ -89,8 +91,16 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
     if memories:
         system_prompt = f"{_SYSTEM_PROMPT}\n\n{memories}"
 
+    model_kwargs: dict = {
+        "model_id": MODEL_ID,
+        "region_name": REGION,
+        "cache_config": CacheConfig(strategy="auto"),
+    }
+    if _s.guardrail_id:
+        model_kwargs["guardrail_id"] = _s.guardrail_id
+        model_kwargs["guardrail_version"] = _s.guardrail_version
     agent = Agent(
-        model=BedrockModel(model_id=MODEL_ID, region_name=REGION),
+        model=BedrockModel(**model_kwargs),
         system_prompt=system_prompt,
         tools=[run_triage, run_diagnosis, run_resolution],
     )

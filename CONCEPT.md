@@ -212,8 +212,16 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 | Gateway | 内部サービスをMCPツール化 | 既存REST APIを変更せずエージェントから利用可能にする |
 | Registry | capabilityベースの動的発見 | エージェントがサービスのエンドポイントをハードコードしない |
 | Memory | 会話文脈・ユーザー傾向の記憶 | セッション継続性と個人化。業務データとは明確に分離 |
+| Policy (V3) | エージェント間のツールアクセスをCedarポリシーで制御 | 責務分割をコードではなくインフラレベルで強制。Triage/Diagnosis は読み取り専用、Resolution のみ書き込み許可 |
 | Evaluations (V3) | 解決提案の品質をLLM-as-a-Judgeで評価 | 主観的な品質を定量化し継続的改善の指標にする |
 | Observability (V3) | OTELによるエンドツーエンドトレーシング | Bridge Lambda → エージェント間の処理フローをCloudWatchで可視化 |
+
+## Bedrock 機能マッピング
+
+| Bedrock機能 | 役割 | 採用理由 |
+|---|---|---|
+| Guardrails | Gateway Agent の入出力をポリシーで制御 | FIS操作・実システム変更をプロンプト外から強制ブロック。Denied Topics で Chat UI からの迂回を防ぐ |
+| Prompt Caching (`strategy="auto"`) | 全エージェントのシステムプロンプトを自動キャッシュ | システムプロンプトが 1,024 トークンを超えた時点でコスト・レイテンシを自動削減 |
 
 ---
 
@@ -342,6 +350,8 @@ SNS 通知受信
 - CloudWatch MCP（Diagnosis Agent が障害メトリクスを参照するため）
 - Makefile デモ制御ターゲット（demo-start / demo-inject / demo-stop）
 - Chat UI 改修・Gateway Agent システムプロンプト更新（アドホック質問・問い合わせ対応）
+- Bedrock Guardrails（Gateway Agent の禁止操作を Denied Topics でブロック）
+- Bedrock Prompt Caching（全エージェントに `CacheConfig(strategy="auto")` を設定）
 
 **V3: 見える**
 - AgentCore Observability（OTEL計装）
@@ -360,7 +370,6 @@ SNS 通知受信
 ### Out（作らない）
 
 - AgentCore Identity（ユーザー認証・OAuth委譲）
-- AgentCore Policy（Cedar rules）
 - AgentCore Code Interpreter
 - 本物のJira / PagerDuty / Slack連携
 - マルチテナント
@@ -391,15 +400,16 @@ SNS 通知受信
 15. FIS 実験テンプレート作成（invocation-error シナリオ）
 16. CloudWatch MCP デプロイ・Registry登録（Diagnosis Agent が障害メトリクスを参照するため）
 17. Chat UI 改修・Gateway Agent システムプロンプト更新（インシデント起票 → アドホック質問・問い合わせ、禁止操作の明示）
-18. エンドツーエンドデモ検証（FIS起動 → アラーム → 診断 → チケット）
+18. AgentCore Policy 設定（Gateway に Policy Engine 付与、エージェント別ツールアクセス制御）
+19. エンドツーエンドデモ検証（FIS起動 → アラーム → 診断 → チケット）
 
 ### V3: 見える
 
-19. OTEL計装（AgentCore Observability）
-20. Cost Explorer MCP デプロイ・Registry登録（Bedrock利用コスト分析）
-21. Analysis Agent 実装・デプロイ
-22. AgentCore Evaluations 設定
-23. React UI Reports タブ追加
+20. OTEL計装（AgentCore Observability）
+21. Cost Explorer MCP デプロイ・Registry登録（Bedrock利用コスト分析）
+22. Analysis Agent 実装・デプロイ
+23. AgentCore Evaluations 設定
+24. React UI Reports タブ追加
 
 ### V4: 進化する
 
