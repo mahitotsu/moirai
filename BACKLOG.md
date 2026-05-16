@@ -4,12 +4,12 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V2 — 見える  
-**次のタスク**: #11 OTEL計装 (AgentCore Observability)
+**フェーズ**: V2 — 自動化する  
+**次のタスク**: #11 監視対象 Lambda 実装 (fake-api-server + FIS Extension Layer)
 
 ---
 
-## V1: 動く
+## V1: 動く（完了）
 
 - [x] 1. DynamoDBテーブル設計・作成 (tickets / assets)
 - [x] 2. Ticket Service 実装 (FastAPI + DynamoDB)
@@ -32,34 +32,37 @@
   - [x] 10b. Tickets タブ (REST API直接)
   - [x] 10c. Knowledge タブ (REST API直接)
 
-## V2: 見える
+## V2: 自動化する
 
-- [ ] 11. OTEL計装 (AgentCore Observability)
-- [ ] 12. AWS Observability MCP群 デプロイ・Registry登録
-  - [ ] 12a. CloudWatch MCP (awslabs/mcp 流用)
-  - [ ] 12b. Cost Explorer MCP (awslabs/mcp 流用)
-- [ ] 13. Analysis Agent 実装・デプロイ
-- [ ] 14. AgentCore Evaluations 設定
-- [ ] 15. React UI Reports タブ追加
+- [ ] 11. 監視対象 Lambda 実装 (fake-api-server + FIS Extension Layer)
+- [ ] 12. EventBridge Scheduler 設定 (定期呼び出しで負荷生成・デフォルト無効)
+  - [ ] 12a. Makefile デモ制御ターゲット実装 (demo-start / demo-inject / demo-stop)
+- [ ] 13. CloudWatch アラーム + SNS トピック設定
+- [ ] 14. Bridge Lambda 実装 (アラーム → Ticket 自動起票 + Gateway Agent POST)
+- [ ] 15. FIS 実験テンプレート作成 (invocation-error シナリオ)
+- [ ] 16. CloudWatch MCP デプロイ・Registry登録 (Diagnosis Agent が障害メトリクスを参照するため)
+- [ ] 17. Chat UI 改修・Gateway Agent システムプロンプト更新
+  - インシデント起票 UI → アドホック質問・問い合わせ UI に変更
+  - 受け付ける質問カテゴリ・禁止操作を Gateway Agent System Prompt に反映
+- [ ] 18. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
 
-## V2.5: FISデモ環境構築
+## V3: 見える
 
-- [ ] 16. 監視対象 Lambda 実装 (fake-api-server + FIS Extension Layer)
-- [ ] 17. EventBridge Scheduler 設定 (定期呼び出しで負荷生成)
-- [ ] 18. CloudWatch アラーム + SNS トピック設定
-- [ ] 19. Bridge Lambda 実装 (アラーム → Agora Gateway Agent チャット POST)
-- [ ] 20. FIS 実験テンプレート作成 (invocation-error シナリオ)
-- [ ] 21. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
+- [ ] 19. OTEL計装 (AgentCore Observability)
+- [ ] 20. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
+- [ ] 21. Analysis Agent 実装・デプロイ
+- [ ] 22. AgentCore Evaluations 設定
+- [ ] 23. React UI Reports タブ追加
 
-## V3: 進化する
+## V4: 進化する
 
-- [ ] 22. DynamoDB Streams 有効化
-- [ ] 23. Lambda (stream consumer) 実装
-- [ ] 24. Runbook Generator Agent 実装・デプロイ
-- [ ] 25. SSM Automation Document テンプレート設計
-- [ ] 26. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
-- [ ] 27. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
-- [ ] 28. React UI Runbooks タブ追加
+- [ ] 24. DynamoDB Streams 有効化
+- [ ] 25. Lambda (stream consumer) 実装
+- [ ] 26. Runbook Generator Agent 実装・デプロイ
+- [ ] 27. SSM Automation Document テンプレート設計
+- [ ] 28. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
+- [ ] 29. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
+- [ ] 30. React UI Runbooks タブ追加
 
 ---
 
