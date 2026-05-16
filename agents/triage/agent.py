@@ -7,7 +7,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.multiagent.a2a.executor import StrandsA2AExecutor
 
-MODEL_ID = "us.anthropic.claude-sonnet-4-6"
+MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001"
 _SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
 
 

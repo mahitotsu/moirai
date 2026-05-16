@@ -43,10 +43,9 @@ uv add <package> --package <name>   # 特定パッケージに依存追加
 make test                           # 全テスト実行
 make test-service s=ticket-service  # サービス単体テスト
 make lint                           # ruff + mypy
-make build img=ticket-service       # ARM64 Dockerビルド
-make deploy img=ticket-service      # ECRにプッシュ (承認必要)
+make build img=ticket-service       # ARM64 Dockerビルド (ローカル確認用)
 make cdk-diff                       # CDK差分確認 (安全)
-make cdk-deploy                     # CDKデプロイ (承認必要)
+make cdk-deploy                     # CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
 ```
 
 ## AWS環境
@@ -131,7 +130,6 @@ infrastructure/
 |---|---|
 | 新しいFastAPIサービスを作る | `.claude/commands/new-service.md` |
 | 新しいMCPサーバーを作る | `.claude/commands/new-mcp.md` |
-| ECRへのデプロイを行う | `.claude/commands/deploy.md` |
 | コミット前の品質確認・コミット | `.claude/commands/close-out.md` |
 | マイルストーン完了時の深いレビュー | `.claude/commands/review.md` |
 

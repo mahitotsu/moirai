@@ -1,19 +1,14 @@
-REGION  := us-east-1
-ACCOUNT := $(shell aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "unknown")
-ECR     := $(ACCOUNT).dkr.ecr.$(REGION).amazonaws.com
 
 # make test                       — 全テスト
 # make test-service s=ticket-service — サービス単体テスト
 # make lint                       — ruff + mypy
-# make build img=ticket-service   — ARM64 Dockerビルド (services/ or mcp-servers/)
-# make build img=triage           — ARM64 Dockerビルド (agents/)
-# make deploy img=ticket-service  — ECRにプッシュ (承認必要)
+# make build img=ticket-service   — ARM64 Dockerビルド (ローカル確認用)
 # make cdk-diff                   — CDK差分確認
-# make cdk-deploy                 — CDKデプロイ (承認必要)
+# make cdk-deploy                 — CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
 # make gen-specs                  — OpenAPI spec JSONを再生成
 # make register-catalog           — AgentCore Registry catalog 登録 (Registry/Record は CDK 未対応)
 
-.PHONY: test test-service lint build deploy cdk-diff cdk-synth cdk-deploy gen-specs register-catalog
+.PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs register-catalog
 
 test:
 	@failed=0; \
@@ -49,12 +44,6 @@ build:
 	  uv export --package $(img) --no-dev --no-hashes -o mcp-servers/$(img)/requirements.txt; \
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img); \
 	fi
-
-deploy:
-	aws ecr get-login-password --region $(REGION) | \
-	  docker login --username AWS --password-stdin $(ECR)
-	docker tag agora-$(img):latest $(ECR)/agora-$(img):latest
-	docker push $(ECR)/agora-$(img):latest
 
 cdk-diff:
 	cd infrastructure && cdk diff
