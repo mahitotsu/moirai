@@ -42,6 +42,8 @@
   - [x] 14a. ticket-dispatcher Lambda 実装 (DynamoDB Streams → Gateway Agent 呼び出し・V4先取り)
 - [x] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → dynamodb:GetItem)
 - [x] 16. CloudWatch MCP デプロイ・Registry登録 (Diagnosis Agent が障害メトリクスを参照するため)
+  - [x] Registry登録をCDK Custom Resource (Lambda-backed) に移行・手動スクリプト廃止
+  - [x] Diagnosis Agent に check_cloudwatch_alarms ツール追加
 - [ ] 17. Chat UI 改修・Gateway Agent システムプロンプト更新
   - インシデント起票 UI → アドホック質問・問い合わせ UI に変更
   - 受け付ける質問カテゴリ・禁止操作を Gateway Agent System Prompt に反映
