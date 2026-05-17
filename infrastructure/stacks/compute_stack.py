@@ -9,11 +9,15 @@ import aws_cdk.aws_cloudfront_origins as origins
 import aws_cdk.aws_ecr_assets as ecr_assets
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
+import aws_cdk.aws_lambda_event_sources as event_sources
 import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_secretsmanager as secretsmanager
+import aws_cdk.aws_ssm as ssm
 from aws_cdk.aws_s3_deployment import BucketDeployment, Source
 from constructs import Construct
 from pydantic_settings import BaseSettings
+
+from stacks.data_stack import DataStack
 
 _UI_DIR = str(Path(__file__).parent.parent.parent / "ui")
 
@@ -28,7 +32,9 @@ _AGENT_RUNTIME_ARN = _Settings().agent_runtime_arn
 
 
 class ComputeStack(cdk.Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs: object) -> None:
+    def __init__(
+        self, scope: Construct, construct_id: str, data: DataStack, **kwargs: object
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # -------------------------------------------------------------------------
@@ -580,6 +586,83 @@ class ComputeStack(cdk.Stack):
         )
         cdk.CfnOutput(
             self, "MemoryExecutionRoleArn", value=self.memory_execution_role.role_arn
+        )
+
+        # -------------------------------------------------------------------------
+        # SSM Parameter — MonitoringStack (Bridge Lambda) がアカウント解決なしに参照できる
+        # -------------------------------------------------------------------------
+        ssm.StringParameter(
+            self,
+            "TicketServiceUrlParam",
+            parameter_name="/agora/ticket-service-url",
+            string_value=self.ticket_url.url,
+            description="Ticket Service Lambda Function URL (for Bridge Lambda)",
+        )
+
+        # -------------------------------------------------------------------------
+        # Ticket Dispatcher Lambda — DynamoDB Streams consumer (Agora platform side)
+        #
+        # Triggered by INSERT events on agora-tickets (DynamoDB Streams).
+        # Invokes the Gateway Agent to start Triage→Diagnosis→Resolution pipeline.
+        # Separated from Bridge Lambda (monitored system) to keep concerns clean.
+        # -------------------------------------------------------------------------
+        ticket_dispatcher_role = iam.Role(
+            self,
+            "TicketDispatcherRole",
+            role_name="agora-ticket-dispatcher-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaBasicExecutionRole"
+                ),
+                # DynamoDB Streams ポーリング (DescribeStream / GetRecords / etc.)
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaDynamoDBExecutionRole"
+                ),
+            ],
+        )
+        ticket_dispatcher_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock-agentcore:InvokeAgentRuntime"],
+                resources=["*"],
+            )
+        )
+
+        ticket_dispatcher_fn = lambda_.Function(
+            self,
+            "TicketDispatcherFn",
+            function_name="agora-ticket-dispatcher",
+            code=lambda_.Code.from_asset(
+                str(Path(__file__).parent.parent.parent / "services" / "ticket-dispatcher")
+            ),
+            handler="lambda_function.handler",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            architecture=lambda_.Architecture.ARM_64,
+            memory_size=256,
+            timeout=cdk.Duration.seconds(120),
+            role=ticket_dispatcher_role,
+            environment={
+                "AGENT_RUNTIME_ARN": _AGENT_RUNTIME_ARN,
+            },
+        )
+
+        ticket_dispatcher_fn.add_event_source(
+            event_sources.DynamoEventSource(
+                data.tickets_table,
+                starting_position=lambda_.StartingPosition.LATEST,
+                batch_size=10,
+                bisect_batch_on_error=True,
+                retry_attempts=2,
+                filters=[
+                    lambda_.FilterCriteria.filter(
+                        {"eventName": lambda_.FilterRule.is_equal("INSERT")}
+                    )
+                ],
+            )
+        )
+
+        cdk.CfnOutput(
+            self, "TicketDispatcherFnArn", value=ticket_dispatcher_fn.function_arn
         )
 
         # -------------------------------------------------------------------------
