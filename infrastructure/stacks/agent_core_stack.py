@@ -5,10 +5,15 @@ from pathlib import Path
 
 import aws_cdk as cdk
 import aws_cdk.aws_bedrockagentcore as agentcore
+import aws_cdk.aws_iam as iam
+import aws_cdk.aws_lambda as lambda_
+import aws_cdk.custom_resources as cr
 from constructs import Construct
 from pydantic_settings import BaseSettings
 
 from stacks.compute_stack import ComputeStack
+
+_LAMBDA_DIR = Path(__file__).parent.parent / "lambda"
 
 SPECS_DIR = Path(__file__).parent.parent / "specs"
 
@@ -354,3 +359,78 @@ class AgentCoreStack(cdk.Stack):
             )
 
         cdk.CfnOutput(self, "GatewayUrl", value=self.gateway.attr_gateway_url)
+
+        # -------------------------------------------------------------------------
+        # Registry Catalog — Lambda-backed Custom Resource
+        # Registers all MCP servers and A2A agents in the AgentCore Registry as
+        # part of cdk deploy. Runs after all CfnRuntime resources are created.
+        # On Update: clears and re-registers all records (picks up new ARNs).
+        # On Delete: removes all records from the Registry.
+        # -------------------------------------------------------------------------
+        registry_role = iam.Role(
+            self,
+            "RegistryCatalogRole",
+            role_name="agora-registry-catalog-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaBasicExecutionRole"
+                )
+            ],
+        )
+        registry_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:GetAgentRuntime",
+                    "bedrock-agentcore:CreateRegistry",
+                    "bedrock-agentcore:ListRegistries",
+                    "bedrock-agentcore:CreateRegistryRecord",
+                    "bedrock-agentcore:ListRegistryRecords",
+                    "bedrock-agentcore:GetRegistryRecord",
+                    "bedrock-agentcore:DeleteRegistryRecord",
+                    "bedrock-agentcore:DeleteRegistry",
+                ],
+                resources=["*"],
+            )
+        )
+
+        registry_fn = lambda_.Function(
+            self,
+            "RegistryCatalogFn",
+            function_name="agora-registry-catalog",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="registry_catalog_handler.handler",
+            code=lambda_.Code.from_asset(
+                str(_LAMBDA_DIR),
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output --quiet"
+                        " && cp -au . /asset-output",
+                    ],
+                ),
+            ),
+            timeout=cdk.Duration.minutes(10),
+            role=registry_role,
+        )
+
+        # Explicit dependencies ensure the Lambda only runs after all runtimes exist
+        for runtime in list(self.mcp_runtimes.values()) + list(self.agent_runtimes.values()):
+            registry_fn.node.add_dependency(runtime)
+        registry_fn.node.add_dependency(self.gateway_agent_runtime)
+
+        registry_provider = cr.Provider(
+            self,
+            "RegistryProvider",
+            on_event_handler=registry_fn,
+        )
+        cdk.CustomResource(
+            self,
+            "RegistryCatalog",
+            service_token=registry_provider.service_token,
+            # Increment CatalogVersion to force re-registration after catalog changes
+            properties={"CatalogVersion": "2"},
+        )

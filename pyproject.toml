@@ -31,7 +31,7 @@ select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "mcp-servers/*/tests/*.py" = ["E402"]
-"infrastructure/scripts/*.py" = ["E501"]
+"infrastructure/lambda/*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

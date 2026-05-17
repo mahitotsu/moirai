@@ -6,14 +6,13 @@
 # make cdk-diff                   — CDK差分確認
 # make cdk-deploy                 — CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
 # make gen-specs                  — OpenAPI spec JSONを再生成
-# make register-catalog           — AgentCore Registry catalog 登録 (Registry/Record は CDK 未対応)
 #
 # デモ制御 (V2):
 # make demo-start                 — EventBridge Scheduler 有効化 (トラフィック開始)
 # make demo-inject                — FIS 実験開始 (障害注入) ※ task #15 で実装予定
 # make demo-stop                  — Scheduler 無効化 + 実行中 FIS 実験を強制終了
 
-.PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs register-catalog \
+.PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
         demo-start demo-inject demo-stop
 
 test:
@@ -71,9 +70,6 @@ gen-specs:
 	from app.main import app as a; json.dump(a.openapi(), open('infrastructure/specs/asset-service.json','w'), indent=2)
 	print("Specs generated in infrastructure/specs/")
 	EOF
-
-register-catalog:
-	uv run --package agora-infrastructure python infrastructure/scripts/register_catalog.py
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
 

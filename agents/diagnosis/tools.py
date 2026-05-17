@@ -125,6 +125,29 @@ def search_community_knowledge(query: str, tags: list[str] | None = None) -> str
 
 
 @tool
+def check_cloudwatch_alarms() -> str:
+    """Check CloudWatch for active alarms indicating AWS infrastructure issues.
+
+    Queries all CloudWatch alarms currently in ALARM state. Use this tool when
+    diagnosing incidents that may be related to AWS infrastructure metrics
+    (Lambda errors, DynamoDB throttling, API errors, high latency, etc.).
+
+    Returns:
+        Active CloudWatch alarms with details, or a message if none are found.
+    """
+    runtimes = discover_by_capability("aws-observability")
+    if not runtimes:
+        return "No observability MCP servers are currently registered."
+
+    rt = runtimes[0]
+    try:
+        result = _call_mcp_tool_sync(rt["runtime_arn"], "get_active_alarms", {})
+        return f"=== CloudWatch Active Alarms ===\n{result}"
+    except Exception as exc:
+        return f"CloudWatch alarm check failed: {exc}"
+
+
+@tool
 def search_past_tickets(query: str, limit: int = 5) -> str:
     """Search past incident tickets for similar issues and their resolutions.
 
