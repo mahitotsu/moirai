@@ -53,6 +53,14 @@ _MCP_SERVERS: list[dict] = [
         "capability": "community-knowledge",
         "env": {"AWS_DOCUMENTATION_PARTITION": "aws", "FASTMCP_LOG_LEVEL": "WARNING"},
     },
+    {
+        "name": "cloudwatch",
+        "runtime_name": "agora_cloudwatch",
+        "description": "CloudWatch MCP — metrics, alarms, Logs Insights (awslabs/mcp)",
+        "protocol": "MCP",
+        "capability": "aws-observability",
+        "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
+    },
 ]
 
 _A2A_AGENTS: list[dict] = [

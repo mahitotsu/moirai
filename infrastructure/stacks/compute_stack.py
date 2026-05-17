@@ -47,7 +47,7 @@ class ComputeStack(cdk.Stack):
 
         self.agent_images: dict[str, ecr_assets.DockerImageAsset] = {}
 
-        for _name in ["stackoverflow", "github-issues", "wikipedia", "aws-docs"]:
+        for _name in ["stackoverflow", "github-issues", "wikipedia", "aws-docs", "cloudwatch"]:
             _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
             self.agent_images[_name] = ecr_assets.DockerImageAsset(
                 self,
@@ -99,6 +99,25 @@ class ComputeStack(cdk.Stack):
                     "logs:CreateLogGroup",
                     "logs:CreateLogStream",
                     "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+        # CloudWatch MCP — read-only access to metrics, alarms, and Logs Insights
+        self.mcp_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudwatch:GetMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics",
+                    "cloudwatch:DescribeAlarms",
+                    "cloudwatch:DescribeAlarmsForMetric",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                    "logs:FilterLogEvents",
+                    "logs:GetLogEvents",
+                    "logs:StartQuery",
+                    "logs:GetQueryResults",
                 ],
                 resources=["*"],
             )

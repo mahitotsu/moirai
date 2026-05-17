@@ -1,0 +1,7 @@
+[project]
+name = "cloudwatch"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "awslabs-cloudwatch-mcp-server>=0.1.2",
+]
