@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V2 — 自動化する  
-**次のタスク**: #11 監視対象 Lambda 実装 (fake-api-server + FIS Extension Layer)
+**次のタスク**: #13 CloudWatch アラーム + SNS トピック設定
 
 ---
 
@@ -34,9 +34,9 @@
 
 ## V2: 自動化する
 
-- [ ] 11. 監視対象 Lambda 実装 (fake-api-server: DynamoDB GetItem を定期呼び出し)
-- [ ] 12. EventBridge Scheduler 設定 (定期呼び出しで負荷生成・デフォルト無効)
-  - [ ] 12a. Makefile デモ制御ターゲット実装 (demo-start / demo-inject / demo-stop)
+- [x] 11. 監視対象 Lambda 実装 (fake-api-server: DynamoDB GetItem を定期呼び出し)
+- [x] 12. EventBridge Scheduler 設定 (定期呼び出しで負荷生成・デフォルト無効)
+  - [x] 12a. Makefile デモ制御ターゲット実装 (demo-start / demo-inject / demo-stop)
 - [ ] 13. CloudWatch アラーム + SNS トピック設定
 - [ ] 14. Bridge Lambda 実装 (アラーム → Ticket 自動起票 + Gateway Agent POST)
 - [ ] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → dynamodb:GetItem)

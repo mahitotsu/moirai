@@ -112,3 +112,4 @@ class DataStack(cdk.Stack):
                 type=dynamodb.AttributeType.STRING,
             ),
         )
+

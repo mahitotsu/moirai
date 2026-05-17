@@ -41,7 +41,7 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 ```
 [監視対象システム]
   fake-api-server (Lambda) が EventBridge Scheduler から定期実行
-  → 正常時: 200 OK を返し CloudWatch メトリクスを生成
+  → 正常時: agora-monitored-api-data に GetItem し 200 OK を返す
 
 [FIS 障害注入]
   FIS 実験テンプレートを起動
@@ -126,7 +126,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 ┌─────────────────────────────────────────────────────┐
 │ 監視対象システム                                      │
 │   fake-api-server (Lambda)                           │
-│     → DynamoDB GetItem (agora-assets) を定期読み取り │
+│     → DynamoDB GetItem (agora-monitored-api-data) を定期読み取り │
 │   EventBridge Scheduler → 定期実行 → メトリクス生成  │
 │   FIS 実験テンプレート  → DynamoDB API にエラー注入  │
 └─────────────────────────────────────────────────────┘
@@ -232,7 +232,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 
 | コンポーネント | 役割 | 実装 |
 |---|---|---|
-| fake-api-server | デモ用の被監視Lambdaサービス。DynamoDB（agora-assets）を GetItem で定期読み取りし、正常メトリクスを生成する | Lambda (Python) |
+| fake-api-server | デモ用の被監視Lambdaサービス。DynamoDB（agora-monitored-api-data）を GetItem で定期読み取りし、正常メトリクスを生成する | Lambda (Python) |
 | EventBridge Scheduler | fake-api-server を定期呼び出しして CloudWatch メトリクスを生成。**デフォルト無効**。デモ・データ蓄積時のみ有効化する | EventBridge Scheduler |
 | CloudWatch アラーム | エラー率が閾値を超えたときにSNSへ通知 | CloudWatch + SNS |
 | FIS 実験テンプレート | DynamoDB API レベルで `ProvisionedThroughputExceededException` を注入し、Lambda のエラー率を急上昇させる | AWS FIS |
