@@ -4,9 +4,9 @@ from pathlib import Path
 
 import aws_cdk as cdk
 import aws_cdk.aws_cloudwatch as cloudwatch
-import aws_cdk.aws_dynamodb as dynamodb
 import aws_cdk.aws_events as events
 import aws_cdk.aws_events_targets as targets
+import aws_cdk.aws_fis as fis
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
 import aws_cdk.aws_lambda_event_sources as event_sources
@@ -26,7 +26,7 @@ class MonitoringStack(cdk.Stack):
 
     アーキテクチャ:
       fake-api-server Lambda (EventBridge Scheduler で定期実行)
-        → DynamoDB GetItem (agora-monitored-api-data) ← FIS injection target
+        → ec2:DescribeInstances (ヘルスチェック模擬) ← FIS injection target
         → Lambda/Errors メトリクス
       CloudWatch Alarm
         → EventBridge Default Bus (自動、SNS 不要)
@@ -47,23 +47,9 @@ class MonitoringStack(cdk.Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # -------------------------------------------------------------------------
-        # DynamoDB テーブル — fake-api-server 専用 (FIS injection target)
-        # agora-assets / agora-tickets とは完全分離し FIS のブラストラジアスを限定
-        # -------------------------------------------------------------------------
-        self.monitored_api_table = dynamodb.Table(
-            self,
-            "MonitoredApiDataTable",
-            table_name="agora-monitored-api-data",
-            partition_key=dynamodb.Attribute(
-                name="item_id",
-                type=dynamodb.AttributeType.STRING,
-            ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=cdk.RemovalPolicy.DESTROY,
-        )
-
-        # -------------------------------------------------------------------------
         # fake-api-server Lambda — 監視対象システム
+        # EC2 DescribeInstances を定期呼び出しし稼働状況を確認する軽量ヘルスチェック。
+        # 追加リソース不要・常時コストゼロ。FIS のブラストラジアスはこの IAM ロールのみ。
         # -------------------------------------------------------------------------
         self.fake_api_role = iam.Role(
             self,
@@ -78,8 +64,8 @@ class MonitoringStack(cdk.Stack):
         )
         self.fake_api_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["dynamodb:GetItem"],
-                resources=[self.monitored_api_table.table_arn],
+                actions=["ec2:DescribeInstances"],
+                resources=["*"],
             )
         )
 
@@ -94,10 +80,6 @@ class MonitoringStack(cdk.Stack):
             memory_size=256,
             timeout=cdk.Duration.seconds(30),
             role=self.fake_api_role,
-            environment={
-                "TABLE_NAME": self.monitored_api_table.table_name,
-                "ITEM_ID": "config-001",
-            },
         )
 
         # EventBridge Scheduler — デフォルト DISABLED。demo-start で有効化
@@ -196,7 +178,7 @@ class MonitoringStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
-        # Bridge Lambda — SQS → Ticket Service REST API + Gateway Agent
+        # Bridge Lambda — SQS → Ticket Service REST API
         # -------------------------------------------------------------------------
         bridge_role = iam.Role(
             self,
@@ -251,13 +233,67 @@ class MonitoringStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # FIS — EC2 DescribeInstances スロットリング注入実験テンプレート
+        #
+        # aws:fis:inject-api-throttle-error で agora-fake-api-role への
+        # ec2:DescribeInstances 呼び出しをスロットリング。追加リソース不要・常時コストゼロ。
+        #
+        # デモシナリオ:
+        #   make demo-inject → fake-api-server の ec2:DescribeInstances が ThrottlingException
+        #   → Lambda/Errors 増加 → CloudWatch Alarm ALARM → EventBridge → SQS
+        #   → Bridge → チケット起票 → ticket-dispatcher → Gateway Agent → 診断・解決
+        # -------------------------------------------------------------------------
+        fis_role = iam.Role(
+            self,
+            "FisRole",
+            role_name="agora-fis-role",
+            assumed_by=iam.ServicePrincipal("fis.amazonaws.com"),
+        )
+        fis_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["fis:InjectApiThrottleError"],
+                resources=[self.fake_api_role.role_arn],
+            )
+        )
+
+        fis_template = fis.CfnExperimentTemplate(
+            self,
+            "ThrottleExperimentTemplate",
+            description="EC2 API スロットリング注入 — fake-api-server 障害シナリオ",
+            role_arn=fis_role.role_arn,
+            tags={"Project": "agora", "Scenario": "inject-api-throttle-error"},
+            targets={
+                "FakeApiRole": fis.CfnExperimentTemplate.ExperimentTemplateTargetProperty(
+                    resource_type="aws:iam:role",
+                    selection_mode="ALL",
+                    resource_arns=[self.fake_api_role.role_arn],
+                )
+            },
+            actions={
+                "InjectEC2Throttle": fis.CfnExperimentTemplate.ExperimentTemplateActionProperty(
+                    action_id="aws:fis:inject-api-throttle-error",
+                    parameters={
+                        "service": "ec2",
+                        "operations": "DescribeInstances",
+                        "percentage": "100",
+                        "duration": "PT5M",
+                    },
+                    targets={"Roles": "FakeApiRole"},
+                )
+            },
+            stop_conditions=[
+                fis.CfnExperimentTemplate.ExperimentTemplateStopConditionProperty(
+                    source="none",
+                )
+            ],
+        )
+
+        # -------------------------------------------------------------------------
         # Outputs
         # -------------------------------------------------------------------------
-        cdk.CfnOutput(
-            self, "MonitoredApiTableArn", value=self.monitored_api_table.table_arn
-        )
         cdk.CfnOutput(self, "FakeApiServerFnArn", value=self.fake_api_fn.function_arn)
         cdk.CfnOutput(self, "SchedulerRoleArn", value=self.scheduler_role.role_arn)
         cdk.CfnOutput(self, "AlarmQueueUrl", value=self.alarm_queue.queue_url)
         cdk.CfnOutput(self, "AlarmDlqUrl", value=alarm_dlq.queue_url)
         cdk.CfnOutput(self, "BridgeFnArn", value=bridge_fn.function_arn)
+        cdk.CfnOutput(self, "FisTemplateId", value=fis_template.attr_id)

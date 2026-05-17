@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V2 — 自動化する  
-**次のタスク**: #15 FIS 実験テンプレート作成
+**次のタスク**: #16 CloudWatch MCP デプロイ・Registry登録
 
 ---
 
@@ -40,7 +40,7 @@
 - [x] 13. CloudWatch アラーム + EventBridge Rule + SQS(+DLQ) 設定
 - [x] 14. Bridge Lambda 実装 (アラーム → Ticket 自動起票)
   - [x] 14a. ticket-dispatcher Lambda 実装 (DynamoDB Streams → Gateway Agent 呼び出し・V4先取り)
-- [ ] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → dynamodb:GetItem)
+- [x] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → dynamodb:GetItem)
 - [ ] 16. CloudWatch MCP デプロイ・Registry登録 (Diagnosis Agent が障害メトリクスを参照するため)
 - [ ] 17. Chat UI 改修・Gateway Agent システムプロンプト更新
   - インシデント起票 UI → アドホック質問・問い合わせ UI に変更

@@ -77,8 +77,9 @@ register-catalog:
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
 
-_REGION       := us-east-1
+_REGION        := us-east-1
 _SCHEDULE_NAME := agora-fake-api-server-schedule
+_MONITORING_STACK := AgoraMonitoringStack
 
 demo-start:
 	@echo "==> Enabling EventBridge Scheduler (traffic starts, baseline metrics build up)..."
@@ -93,9 +94,21 @@ demo-start:
 	@echo "==> Done. Wait 2–3 minutes for baseline metrics, then run 'make demo-inject'."
 
 demo-inject:
-	@echo "==> FIS experiment template not yet deployed (task #15)."
-	@echo "==> After task #15, run:"
-	@echo "      aws fis start-experiment --experiment-template-id <TMPL_ID> --region $(_REGION)"
+	@echo "==> Starting FIS experiment (DynamoDB GetItem throttle injection)..."
+	@TMPL_ID=$$(aws cloudformation describe-stacks \
+	  --stack-name $(_MONITORING_STACK) \
+	  --region $(_REGION) \
+	  --query "Stacks[0].Outputs[?OutputKey=='FisTemplateId'].OutputValue" \
+	  --output text); \
+	if [ -z "$$TMPL_ID" ] || [ "$$TMPL_ID" = "None" ]; then \
+	  echo "ERROR: FIS template not found. Run 'make cdk-deploy' first."; exit 1; \
+	fi; \
+	EXP_ID=$$(aws fis start-experiment \
+	  --experiment-template-id "$$TMPL_ID" \
+	  --region $(_REGION) \
+	  --query 'experiment.id' --output text); \
+	echo "==> Experiment started: $$EXP_ID"
+	@echo "==> Throttle active ~5 min. Watch alarm 'agora-fake-api-error-rate' in CloudWatch."
 
 demo-stop:
 	@echo "==> Disabling EventBridge Scheduler..."
