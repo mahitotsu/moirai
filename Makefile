@@ -53,13 +53,13 @@ build:
 	fi
 
 cdk-diff:
-	cd infrastructure && cdk diff
+	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk diff
 
 cdk-synth:
-	cd infrastructure && cdk synth
+	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk synth
 
 cdk-deploy:
-	cd infrastructure && cdk deploy --all --require-approval broadening
+	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk deploy --all --require-approval never
 
 gen-specs:
 	uv run python - << 'EOF'

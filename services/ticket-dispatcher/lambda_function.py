@@ -10,8 +10,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 _AGENT_RUNTIME_ARN = os.environ.get("AGENT_RUNTIME_ARN", "")
+_AGENT_QUALIFIER = "DEFAULT"
 
-_agentcore = boto3.client("bedrock-agentcore", region_name="us-east-1")
+_agentcore = boto3.client("bedrock-agentcore")
 
 
 def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description: str) -> None:
@@ -31,7 +32,7 @@ def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description
 
     resp = _agentcore.invoke_agent_runtime(
         agentRuntimeArn=_AGENT_RUNTIME_ARN,
-        qualifier="DEFAULT",
+        qualifier=_AGENT_QUALIFIER,
         payload=payload,
         runtimeSessionId=ticket_id,
     )

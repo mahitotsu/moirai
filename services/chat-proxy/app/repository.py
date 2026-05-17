@@ -4,6 +4,8 @@ import json
 import uuid
 from typing import Any
 
+_AGENT_QUALIFIER = "DEFAULT"
+
 
 class AgentRepository:
     """Wraps boto3 bedrock-agentcore to invoke the Gateway Agent runtime."""
@@ -24,7 +26,7 @@ class AgentRepository:
         payload = json.dumps({"prompt": message, "user_id": user_id}).encode()
         resp = self._client.invoke_agent_runtime(
             agentRuntimeArn=self._runtime_arn,
-            qualifier="DEFAULT",
+            qualifier=_AGENT_QUALIFIER,
             payload=payload,
             runtimeSessionId=session_id or str(uuid.uuid4()),
         )

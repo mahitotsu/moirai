@@ -15,7 +15,7 @@ app = cdk.App()
 # references (e.g., DynamoDB Streams ARN from DataStack → ComputeStack).
 env = cdk.Environment(
     account=os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    region="us-east-1",
+    region=os.environ.get("CDK_DEFAULT_REGION"),
 )
 
 data = DataStack(app, "AgoraDataStack", env=env)

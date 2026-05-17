@@ -95,7 +95,7 @@ class MonitoringStack(cdk.Stack):
             timeout=cdk.Duration.seconds(30),
             role=self.fake_api_role,
             environment={
-                "TABLE_NAME": "agora-monitored-api-data",
+                "TABLE_NAME": self.monitored_api_table.table_name,
                 "ITEM_ID": "config-001",
             },
         )

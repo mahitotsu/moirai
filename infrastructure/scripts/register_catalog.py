@@ -26,7 +26,6 @@ import time
 
 import boto3
 
-REGION = "us-east-1"
 REGISTRY_NAME = "agora_registry"
 
 # ---------------------------------------------------------------------------
@@ -404,7 +403,7 @@ def _register_a2a_agent(
         "version": "1.0.0",
         "protocolVersion": "0.3.0",
         # Placeholder HTTP URL (required by A2A spec); actual invocation is via AWS SDK
-        "url": f"https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{runtime_arn.split('/')[-1]}/invoke",
+        "url": f"https://bedrock-agentcore.{runtime_arn.split(':')[3]}.amazonaws.com/runtimes/{runtime_arn.split('/')[-1]}/invoke",
         "capabilities": {},
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
@@ -442,8 +441,8 @@ def _register_a2a_agent(
 
 
 def main() -> None:
-    cf = boto3.client("cloudformation", region_name=REGION)
-    control = boto3.client("bedrock-agentcore-control", region_name=REGION)
+    cf = boto3.client("cloudformation")
+    control = boto3.client("bedrock-agentcore-control")
 
     print("Reading runtime ARNs from AgoraAgentCoreStack outputs ...")
     try:

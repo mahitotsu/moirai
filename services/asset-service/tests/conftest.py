@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import os
+
 import boto3
 import pytest
 from app.repository import AssetRepository
 
 TABLE_NAME = "agora-test-assets"
+os.environ.setdefault("TABLE_NAME", TABLE_NAME)
 
 
 @pytest.fixture(scope="session")
 def dynamodb_client():
-    return boto3.client("dynamodb", region_name="us-east-1")
+    return boto3.client("dynamodb")
 
 
 @pytest.fixture(scope="session", autouse=True)

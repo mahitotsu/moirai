@@ -9,7 +9,7 @@ Or from the ui/ directory:
 
 Requires env vars (copy .env.example → .env.local and source it, or export manually):
     AGENT_RUNTIME_ARN  — ARN of the agora_gateway AgentCore Runtime
-    AWS_REGION         — default: us-east-1
+    AWS_REGION / AWS_DEFAULT_REGION / ~/.aws/config — boto3 default region resolution
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-REGION = os.getenv("AWS_REGION", "us-east-1")
 AGENT_RUNTIME_ARN = os.getenv("AGENT_RUNTIME_ARN", "")
+_AGENT_QUALIFIER = "DEFAULT"
 
 
 class ChatRequest(BaseModel):
@@ -54,11 +54,11 @@ async def chat(req: ChatRequest) -> dict[str, str]:
         }
 
     session_id = req.sessionId or str(uuid.uuid4())
-    client = boto3.client("bedrock-agentcore", region_name=REGION)
+    client = boto3.client("bedrock-agentcore")
 
     resp = client.invoke_agent_runtime(
         agentRuntimeArn=AGENT_RUNTIME_ARN,
-        qualifier="DEFAULT",
+        qualifier=_AGENT_QUALIFIER,
         payload=json.dumps({"prompt": req.message, "user_id": req.userId}).encode(),
         runtimeSessionId=session_id,
     )

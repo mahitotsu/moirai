@@ -10,7 +10,7 @@ from app.models import Asset, AssetCreate, AssetUpdate
 from app.repository import AssetRepository
 from app.settings import Settings
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Asset Service")
@@ -26,7 +26,7 @@ async def api_key_middleware(request: Request, call_next):
 
 
 def get_repository() -> AssetRepository:
-    client = boto3.client("dynamodb", region_name=settings.aws_region)
+    client = boto3.client("dynamodb")
     return AssetRepository(client, settings.table_name)
 
 

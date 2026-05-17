@@ -12,12 +12,11 @@ from strands import tool
 
 class _Settings(BaseSettings):
     ticket_service_url: str = ""
-    aws_region: str = "us-east-1"
 
 
 _s = _Settings()
-REGION = _s.aws_region
 TICKET_SERVICE_URL = _s.ticket_service_url
+_AGENT_QUALIFIER = "DEFAULT"
 
 # Maps runtime name → (tool_name, extra_args_template)
 _MCP_TOOL_MAP: dict[str, tuple[str, dict]] = {
@@ -30,7 +29,7 @@ _MCP_TOOL_MAP: dict[str, tuple[str, dict]] = {
 
 def _call_mcp_tool_sync(runtime_arn: str, tool_name: str, arguments: dict) -> str:
     """Invoke a tool on an AgentCore MCP runtime via invoke_agent_runtime."""
-    client = boto3.client("bedrock-agentcore", region_name=REGION)
+    client = boto3.client("bedrock-agentcore")
     session_id = str(uuid4())
 
     # MCP initialize
@@ -46,7 +45,7 @@ def _call_mcp_tool_sync(runtime_arn: str, tool_name: str, arguments: dict) -> st
     }).encode()
     client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
-        qualifier="DEFAULT",
+        qualifier=_AGENT_QUALIFIER,
         payload=init_payload,
         mcpSessionId=session_id,
         mcpProtocolVersion="2024-11-05",
@@ -61,7 +60,7 @@ def _call_mcp_tool_sync(runtime_arn: str, tool_name: str, arguments: dict) -> st
     }).encode()
     resp = client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
-        qualifier="DEFAULT",
+        qualifier=_AGENT_QUALIFIER,
         payload=call_payload,
         mcpSessionId=session_id,
         mcpProtocolVersion="2024-11-05",

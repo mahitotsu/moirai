@@ -10,11 +10,10 @@ from strands.multiagent.a2a.executor import StrandsA2AExecutor
 
 
 class _Settings(BaseSettings):
-    aws_region: str = "us-east-1"
+    model_id: str = "us.anthropic.claude-haiku-4-5-20251001"
 
 
-MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001"
-REGION = _Settings().aws_region
+MODEL_ID = _Settings().model_id
 _SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
 
 
@@ -22,7 +21,6 @@ def _create_agent() -> Agent:
     return Agent(
         model=BedrockModel(
             model_id=MODEL_ID,
-            region_name=REGION,
             cache_config=CacheConfig(strategy="auto"),
         ),
         system_prompt=_SYSTEM_PROMPT,

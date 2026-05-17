@@ -9,10 +9,10 @@ import boto3
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-_TABLE_NAME = os.environ.get("TABLE_NAME", "agora-monitored-api-data")
+_TABLE_NAME = os.environ["TABLE_NAME"]
 _ITEM_ID = os.environ.get("ITEM_ID", "config-001")
 
-_dynamodb = boto3.client("dynamodb", region_name="us-east-1")
+_dynamodb = boto3.client("dynamodb")
 
 
 def handler(event: dict, context: object) -> dict:

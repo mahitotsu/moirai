@@ -21,8 +21,6 @@ import time
 
 import boto3
 
-REGION = "us-east-1"
-
 # CDKが管理する runtime name の集合
 CDK_MANAGED_RUNTIMES = {
     "agora_stackoverflow",
@@ -48,7 +46,7 @@ def _wait_deleted(check_fn, label: str, interval: int = 5, max_tries: int = 24) 
     print(f"  WARNING: {label} did not confirm deletion within timeout")
 
 
-ctrl = boto3.client("bedrock-agentcore-control", region_name=REGION)
+ctrl = boto3.client("bedrock-agentcore-control")
 
 
 # ---------------------------------------------------------------------------

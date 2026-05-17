@@ -25,7 +25,7 @@ _settings = Settings()
 
 
 def get_repository() -> AgentRepository:
-    client = boto3.client("bedrock-agentcore", region_name=_settings.aws_region)
+    client = boto3.client("bedrock-agentcore")
     return AgentRepository(client, _settings.agent_runtime_arn)
 
 

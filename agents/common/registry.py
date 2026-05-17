@@ -23,14 +23,7 @@ from __future__ import annotations
 import json
 
 import boto3
-from pydantic_settings import BaseSettings
 
-
-class _Settings(BaseSettings):
-    aws_region: str = "us-east-1"
-
-
-REGION = _Settings().aws_region
 REGISTRY_NAME = "agora_registry"
 _ACTIVE_STATUSES = {"DRAFT", "APPROVED"}
 
@@ -90,10 +83,7 @@ def _parse_a2a_card_content(control, registry_id: str, record: dict) -> dict | N
         return None
 
 
-def discover_by_capability(
-    capability: str,
-    region: str = REGION,
-) -> list[dict]:
+def discover_by_capability(capability: str) -> list[dict]:
     """Return all MCP servers in the Registry tagged with the given capability.
 
     Each entry:
@@ -103,7 +93,7 @@ def discover_by_capability(
         endpoint_id   : str — endpoint name
         endpoint_arn  : str — empty (not stored; endpoint is addressed by name)
     """
-    control = boto3.client("bedrock-agentcore-control", region_name=region)
+    control = boto3.client("bedrock-agentcore-control")
 
     registry_id = _find_registry_id(control)
     if not registry_id:
@@ -134,9 +124,7 @@ def discover_by_capability(
     return results
 
 
-def discover_a2a_agents(
-    region: str = REGION,
-) -> list[dict]:
+def discover_a2a_agents() -> list[dict]:
     """Return all A2A agents in the Registry with capability='a2a-agent'.
 
     Each entry:
@@ -147,7 +135,7 @@ def discover_a2a_agents(
         endpoint_id   : str
         endpoint_arn  : str
     """
-    control = boto3.client("bedrock-agentcore-control", region_name=region)
+    control = boto3.client("bedrock-agentcore-control")
 
     registry_id = _find_registry_id(control)
     if not registry_id:

@@ -14,15 +14,14 @@ from tools import run_diagnosis, run_resolution, run_triage
 
 
 class _Settings(BaseSettings):
+    model_id: str = "us.anthropic.claude-sonnet-4-6"
     memory_id: str = ""
-    aws_region: str = "us-east-1"
     guardrail_id: str = ""
     guardrail_version: str = "DRAFT"
 
 
 _s = _Settings()
-MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-REGION = _s.aws_region
+MODEL_ID = _s.model_id
 MEMORY_ID = _s.memory_id
 
 _SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
@@ -35,7 +34,7 @@ _memory_client: Any = None
 def _memory() -> Any:
     global _memory_client
     if _memory_client is None:
-        _memory_client = boto3.client("bedrock-agentcore", region_name=REGION)
+        _memory_client = boto3.client("bedrock-agentcore")
     return _memory_client
 
 
@@ -93,7 +92,6 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
 
     model_kwargs: dict = {
         "model_id": MODEL_ID,
-        "region_name": REGION,
         "cache_config": CacheConfig(strategy="auto"),
     }
     if _s.guardrail_id:

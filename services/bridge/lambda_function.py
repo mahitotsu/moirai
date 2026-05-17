@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 _TICKET_SERVICE_URL = os.environ["TICKET_SERVICE_URL"].rstrip("/")
 _API_KEY_SECRET_NAME = os.environ["API_KEY_SECRET_NAME"]
 
-_sm = boto3.client("secretsmanager", region_name="us-east-1")
+_sm = boto3.client("secretsmanager")
 
 
 @lru_cache(maxsize=1)

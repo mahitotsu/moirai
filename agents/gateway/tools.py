@@ -5,15 +5,9 @@ from uuid import uuid4
 
 import boto3
 from common.registry import discover_a2a_agents
-from pydantic_settings import BaseSettings
 from strands import tool
 
-
-class _Settings(BaseSettings):
-    aws_region: str = "us-east-1"
-
-
-REGION = _Settings().aws_region
+_AGENT_QUALIFIER = "DEFAULT"
 
 # Cache agent ARNs per process to avoid repeated Registry lookups
 _agent_arn_cache: dict[str, str] = {}
@@ -32,7 +26,7 @@ def _find_agent_arn(agent_type: str) -> str | None:
 
 def _invoke_a2a_agent(runtime_arn: str, message: str) -> str:
     """Invoke an A2A agent via AgentCore Runtime and return the response text."""
-    client = boto3.client("bedrock-agentcore", region_name=REGION)
+    client = boto3.client("bedrock-agentcore")
 
     payload = json.dumps({
         "jsonrpc": "2.0",
@@ -49,7 +43,7 @@ def _invoke_a2a_agent(runtime_arn: str, message: str) -> str:
 
     resp = client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
-        qualifier="DEFAULT",
+        qualifier=_AGENT_QUALIFIER,
         payload=payload,
         runtimeSessionId=str(uuid4()),
     )

@@ -165,10 +165,10 @@ class ComputeStack(cdk.Stack):
                     "dynamodb:Scan",
                 ],
                 resources=[
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-tickets",
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-tickets/index/*",
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-assets",
-                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-assets/index/*",
+                    data.tickets_table.table_arn,
+                    data.tickets_table.table_arn + "/index/*",
+                    data.assets_table.table_arn,
+                    data.assets_table.table_arn + "/index/*",
                 ],
             )
         )
@@ -206,14 +206,12 @@ class ComputeStack(cdk.Stack):
             role=self.lambda_role,
             environment={
                 **common_env,
-                "TABLE_NAME": "agora-tickets",
-                "API_KEY_SECRET_NAME": "agora/services-api-key",
+                "TABLE_NAME": data.tickets_table.table_name,
+                "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
             },
         )
         # Inject API key from Secrets Manager
-        secretsmanager.Secret.from_secret_name_v2(
-            self, "ApiKeyRefTicket", "agora/services-api-key"
-        ).grant_read(self.lambda_role)
+        self.services_api_key_secret.grant_read(self.lambda_role)
 
         self.asset_fn = lambda_.DockerImageFunction(
             self,
@@ -229,8 +227,8 @@ class ComputeStack(cdk.Stack):
             role=self.lambda_role,
             environment={
                 **common_env,
-                "TABLE_NAME": "agora-assets",
-                "API_KEY_SECRET_NAME": "agora/services-api-key",
+                "TABLE_NAME": data.assets_table.table_name,
+                "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
             },
         )
 

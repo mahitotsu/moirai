@@ -62,7 +62,7 @@ _A2A_AGENTS: list[dict] = [
         "description": "Triage Agent — classifies IT incidents by severity and category",
         "protocol": "A2A",
         "capability": "a2a-agent",
-        "env": {},
+        "env": {"MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001"},
     },
     {
         "name": "diagnosis",
@@ -70,7 +70,7 @@ _A2A_AGENTS: list[dict] = [
         "description": "Diagnosis Agent — searches community knowledge and past tickets",
         "protocol": "A2A",
         "capability": "a2a-agent",
-        "env": {},  # TICKET_SERVICE_URL injected from ComputeStack outputs
+        "env": {"MODEL_ID": "us.anthropic.claude-sonnet-4-6"},
     },
     {
         "name": "resolution",
@@ -78,7 +78,7 @@ _A2A_AGENTS: list[dict] = [
         "description": "Resolution Agent — generates resolution plans and creates incident tickets",
         "protocol": "A2A",
         "capability": "a2a-agent",
-        "env": {},  # TICKET_SERVICE_URL injected from ComputeStack outputs
+        "env": {"MODEL_ID": "us.anthropic.claude-sonnet-4-6"},
     },
 ]
 
@@ -88,7 +88,7 @@ _GATEWAY_AGENT: dict = {
     "description": "Gateway Agent — user-facing orchestrator (AG-UI/SSE)",
     "protocol": "HTTP",
     "capability": "gateway",
-    "env": {},
+    "env": {"MODEL_ID": "us.anthropic.claude-sonnet-4-6"},
 }
 
 
@@ -159,6 +159,8 @@ class AgentCoreStack(cdk.Stack):
             env_vars = dict(agent["env"])
             if agent["name"] in ("diagnosis", "resolution"):
                 env_vars["TICKET_SERVICE_URL"] = compute.ticket_url.url
+            if agent["name"] == "resolution":
+                env_vars["API_KEY_SECRET_NAME"] = compute.services_api_key_secret.secret_name
 
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
@@ -256,6 +258,7 @@ class AgentCoreStack(cdk.Stack):
             ),
             protocol_configuration=gw_agent["protocol"],
             environment_variables={
+                "MODEL_ID": gw_agent["env"]["MODEL_ID"],
                 "MEMORY_ID": self.memory.attr_memory_id,
                 "GUARDRAIL_ID": compute.guardrail_id,
                 "GUARDRAIL_VERSION": compute.guardrail_version,
@@ -282,8 +285,8 @@ class AgentCoreStack(cdk.Stack):
         self.api_key_cred = agentcore.CfnApiKeyCredentialProvider(
             self,
             "ServicesApiKeyCredential",
-            name="agora_services_api_key",
-            api_key=cdk.SecretValue.secrets_manager("agora/services-api-key").unsafe_unwrap(),
+            name="agora-services-api-key",
+            api_key=compute.services_api_key_secret.secret_value.unsafe_unwrap(),
             tags=[cdk.CfnTag(key="project", value="agora")],
         )
 
