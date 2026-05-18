@@ -167,13 +167,14 @@ class AgentCoreStack(cdk.Stack):
         # -------------------------------------------------------------------------
         # A2A agent runtimes (Triage / Diagnosis / Resolution)
         # -------------------------------------------------------------------------
+        # Forward reference — gateway is created later in this stack but resolves at deploy time
+        _gateway_url = cdk.Token.as_string(cdk.Fn.get_att("AgoraGateway", "GatewayUrl"))
+
         self.agent_runtimes: dict[str, agentcore.CfnRuntime] = {}
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
             if agent["name"] in ("diagnosis", "resolution"):
-                env_vars["TICKET_SERVICE_URL"] = compute.ticket_url.url
-            if agent["name"] == "resolution":
-                env_vars["API_KEY_SECRET_NAME"] = compute.services_api_key_secret.secret_name
+                env_vars["GATEWAY_URL"] = _gateway_url
 
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
@@ -186,7 +187,9 @@ class AgentCoreStack(cdk.Stack):
                         container_uri=compute.agent_images[agent["name"]].image_uri,
                     ),
                 ),
-                role_arn=compute.agent_runtime_role.role_arn,
+                role_arn=getattr(
+                    compute, f"{agent['name']}_runtime_role"
+                ).role_arn,
                 network_configuration=agentcore.CfnRuntime.NetworkConfigurationProperty(
                     network_mode="PUBLIC",
                 ),
@@ -304,6 +307,23 @@ class AgentCoreStack(cdk.Stack):
         )
 
         # -------------------------------------------------------------------------
+        # AgentCore Policy Engine — Cedar-based tool access control.
+        # Attached to the Gateway in LOG_ONLY mode: policy decisions are logged but
+        # not enforced. Switch to ENFORCE + authorizer_type="AWS_IAM" once agents
+        # are migrated to call the Gateway directly.
+        # -------------------------------------------------------------------------
+        self.policy_engine = agentcore.CfnPolicyEngine(
+            self,
+            "AgoraPolicyEngine",
+            name="agora_policy_engine",
+            description="Cedar access control for Agora Gateway — per-agent tool restrictions",
+            tags=[cdk.CfnTag(key="project", value="agora")],
+        )
+        cdk.CfnOutput(
+            self, "PolicyEngineArn", value=self.policy_engine.attr_policy_engine_arn
+        )
+
+        # -------------------------------------------------------------------------
         # AgentCore Gateway (MCP protocol, no inbound auth for sandbox)
         # -------------------------------------------------------------------------
         self.gateway = agentcore.CfnGateway(
@@ -314,6 +334,10 @@ class AgentCoreStack(cdk.Stack):
             role_arn=compute.gateway_role.role_arn,
             authorizer_type="NONE",
             protocol_type="MCP",
+            policy_engine_configuration=agentcore.CfnGateway.GatewayPolicyEngineConfigurationProperty(
+                arn=self.policy_engine.attr_policy_engine_arn,
+                mode="LOG_ONLY",
+            ),
             tags={"project": "agora"},
         )
 
@@ -359,6 +383,78 @@ class AgentCoreStack(cdk.Stack):
             )
 
         cdk.CfnOutput(self, "GatewayUrl", value=self.gateway.attr_gateway_url)
+
+        # -------------------------------------------------------------------------
+        # Cedar policies — per-agent tool access control (LOG_ONLY mode).
+        #
+        # Gateway ARN pattern: arn:aws:bedrock-agentcore:{region}:{account}:gateway/{id}
+        # Action format:       AgentCore::Action::"TargetName___operationId"
+        #
+        # Effective when:
+        #   1. authorizer_type is changed to "AWS_IAM" (enables IAM principal context)
+        #   2. Agents call the Gateway for ticket/asset operations
+        #   3. policy_engine_configuration.mode is changed to "ENFORCE"
+        # -------------------------------------------------------------------------
+        _gw_arn_tpl = (
+            "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}"
+            ":gateway/${GatewayId}"
+        )
+        _gw_sub = {"GatewayId": self.gateway.attr_gateway_identifier}
+
+        # Read-only actions exposed by the two gateway targets
+        _READ_ACTIONS = "\n    ".join([
+            'AgentCore::Action::"agora-ticket-service___list_tickets_tickets_get",',
+            'AgentCore::Action::"agora-ticket-service___get_ticket_tickets__ticket_id__get",',
+            'AgentCore::Action::"agora-asset-service___list_assets_assets_get",',
+            'AgentCore::Action::"agora-asset-service___get_asset_assets__asset_id__get"',
+        ])
+        # Write actions for the Resolution agent
+        _WRITE_ACTIONS = "\n    ".join([
+            'AgentCore::Action::"agora-ticket-service___create_ticket_tickets_post",',
+            'AgentCore::Action::"agora-ticket-service___update_ticket_tickets__ticket_id__patch"',
+        ])
+
+        _POLICY_DEFS: list[tuple[str, str, str]] = [
+            (
+                "agora_triage_policy",
+                "agora-triage-runtime-role",
+                _READ_ACTIONS,
+            ),
+            (
+                "agora_diagnosis_policy",
+                "agora-diagnosis-runtime-role",
+                _READ_ACTIONS,
+            ),
+            (
+                "agora_resolution_policy",
+                "agora-resolution-runtime-role",
+                _WRITE_ACTIONS,
+            ),
+        ]
+
+        for _policy_name, _role_name, _actions in _POLICY_DEFS:
+            _cedar_tpl = (
+                "permit(\n"
+                "  principal is AgentCore::IamEntity,\n"
+                f"  action in [\n    {_actions}\n  ],\n"
+                f'  resource == AgentCore::Gateway::"{_gw_arn_tpl}"\n'
+                ") when {\n"
+                '  principal.id == "arn:aws:iam::${AWS::AccountId}'
+                f':role/{_role_name}"\n'
+                "};"
+            )
+            _lid = "".join(p.title() for p in _policy_name.split("_"))
+            agentcore.CfnPolicy(
+                self,
+                _lid,
+                name=_policy_name,
+                policy_engine_id=self.policy_engine.attr_policy_engine_id,
+                definition=agentcore.CfnPolicy.PolicyDefinitionProperty(
+                    cedar=agentcore.CfnPolicy.CedarPolicyProperty(
+                        statement=cdk.Fn.sub(_cedar_tpl, _gw_sub),
+                    ),
+                ),
+            )
 
         # -------------------------------------------------------------------------
         # Registry Catalog — Lambda-backed Custom Resource

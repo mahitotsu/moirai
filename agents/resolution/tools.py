@@ -1,36 +1,32 @@
 from __future__ import annotations
 
-import httpx
+import json
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 from pydantic_settings import BaseSettings
 from strands import tool
 
 
 class _Settings(BaseSettings):
-    ticket_service_url: str = ""
-    api_key_secret_name: str = ""
+    gateway_url: str = ""
 
 
-_s = _Settings()
-TICKET_SERVICE_URL = _s.ticket_service_url
-_API_KEY_SECRET_NAME = _s.api_key_secret_name
+GATEWAY_URL = _Settings().gateway_url
 
 
-def _get_api_key() -> str:
-    """Fetch API key from Secrets Manager (cached per process)."""
-    global _API_KEY_CACHE
-    if _API_KEY_CACHE:
-        return _API_KEY_CACHE
-    import boto3
-    sm = boto3.client("secretsmanager")
-    _API_KEY_CACHE = sm.get_secret_value(SecretId=_API_KEY_SECRET_NAME)["SecretString"]
-    return _API_KEY_CACHE
-
-
-_API_KEY_CACHE: str = ""
+async def _call_gateway(tool_name: str, arguments: dict) -> str:
+    """Call a tool on the AgentCore Gateway via MCP streamable_http transport."""
+    async with streamablehttp_client(GATEWAY_URL) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(tool_name, arguments)
+    texts = [c.text for c in result.content if hasattr(c, "text")]
+    return " ".join(texts) if texts else str(result)
 
 
 @tool
-def create_ticket(
+async def create_ticket(
     title: str,
     description: str,
     severity: str,
@@ -38,7 +34,10 @@ def create_ticket(
     resolution: str,
     affected_components: list[str] | None = None,
 ) -> str:
-    """Create an incident ticket in the Ticket Service.
+    """Create an incident ticket and attach the resolution plan via AgentCore Gateway.
+
+    Internally performs two Gateway calls: POST /tickets (create) then
+    PATCH /tickets/{id} (attach resolution). Returns the new ticket ID.
 
     Args:
         title: Short title for the incident (max 200 chars).
@@ -46,42 +45,41 @@ def create_ticket(
         severity: One of: low, medium, high, critical.
         category: One of: database, network, memory, deploy, performance, security, other.
         resolution: The resolution plan generated for this incident.
-        affected_components: Optional list of affected system components.
+        affected_components: Ignored (not yet supported by the Ticket Service schema).
 
     Returns:
         The ticket ID of the created ticket, or an error message.
     """
-    if not TICKET_SERVICE_URL:
-        return "TICKET_SERVICE_URL is not configured — cannot create ticket."
-
-    payload: dict = {
-        "title": title,
-        "description": description,
-        "severity": severity,
-        "category": category,
-        "resolution": resolution,
-        "status": "open",
-    }
-    if affected_components:
-        payload["affected_components"] = affected_components
-
+    if not GATEWAY_URL:
+        return "GATEWAY_URL is not configured — cannot create ticket."
     try:
-        api_key = _get_api_key()
-        resp = httpx.post(
-            f"{TICKET_SERVICE_URL.rstrip('/')}/tickets",
-            json=payload,
-            headers={"x-api-key": api_key},
-            timeout=15.0,
+        raw = await _call_gateway(
+            "create_ticket_tickets_post",
+            {
+                "title": title,
+                "description": description,
+                "severity": severity,
+                "category": category,
+            },
         )
-        resp.raise_for_status()
-        ticket = resp.json()
-        return ticket.get("ticket_id", str(ticket))
+        ticket = json.loads(raw)
+        ticket_id = ticket.get("ticket_id")
+        if not ticket_id:
+            return f"Ticket creation returned unexpected response: {raw}"
+
+        await _call_gateway(
+            "update_ticket_tickets__ticket_id__patch",
+            {"ticket_id": ticket_id, "resolution": resolution, "status": "open"},
+        )
+        return ticket_id
     except Exception as exc:
         return f"Ticket creation failed: {exc}"
 
 
 @tool
-def update_ticket_resolution(ticket_id: str, resolution: str, status: str = "resolved") -> str:
+async def update_ticket_resolution(
+    ticket_id: str, resolution: str, status: str = "resolved"
+) -> str:
     """Update an existing ticket with a resolution and optionally mark it resolved.
 
     Args:
@@ -92,19 +90,13 @@ def update_ticket_resolution(ticket_id: str, resolution: str, status: str = "res
     Returns:
         Confirmation message or error.
     """
-    if not TICKET_SERVICE_URL:
-        return "TICKET_SERVICE_URL is not configured — cannot update ticket."
-
-    payload = {"resolution": resolution, "status": status}
+    if not GATEWAY_URL:
+        return "GATEWAY_URL is not configured — cannot update ticket."
     try:
-        api_key = _get_api_key()
-        resp = httpx.patch(
-            f"{TICKET_SERVICE_URL.rstrip('/')}/tickets/{ticket_id}",
-            json=payload,
-            headers={"x-api-key": api_key},
-            timeout=15.0,
+        await _call_gateway(
+            "update_ticket_tickets__ticket_id__patch",
+            {"ticket_id": ticket_id, "resolution": resolution, "status": status},
         )
-        resp.raise_for_status()
         return f"Ticket {ticket_id} updated to status '{status}'."
     except Exception as exc:
         return f"Ticket update failed: {exc}"

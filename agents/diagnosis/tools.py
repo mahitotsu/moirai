@@ -4,18 +4,19 @@ import json
 from uuid import uuid4
 
 import boto3
-import httpx
 from common.registry import discover_by_capability
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 from pydantic_settings import BaseSettings
 from strands import tool
 
 
 class _Settings(BaseSettings):
-    ticket_service_url: str = ""
+    gateway_url: str = ""
 
 
 _s = _Settings()
-TICKET_SERVICE_URL = _s.ticket_service_url
+GATEWAY_URL = _s.gateway_url
 _AGENT_QUALIFIER = "DEFAULT"
 
 # Maps runtime name → (tool_name, extra_args_template)
@@ -148,8 +149,8 @@ def check_cloudwatch_alarms() -> str:
 
 
 @tool
-def search_past_tickets(query: str, limit: int = 5) -> str:
-    """Search past incident tickets for similar issues and their resolutions.
+async def search_past_tickets(query: str, limit: int = 5) -> str:
+    """Search past resolved incident tickets for similar issues via AgentCore Gateway.
 
     Args:
         query: Keywords or description of the incident to match against past tickets.
@@ -158,18 +159,18 @@ def search_past_tickets(query: str, limit: int = 5) -> str:
     Returns:
         List of matching past tickets with their descriptions and resolutions.
     """
-    if not TICKET_SERVICE_URL:
-        return "TICKET_SERVICE_URL is not configured — cannot search past tickets."
-
-    params: dict[str, str] = {"q": query, "limit": str(limit), "status": "resolved"}
+    if not GATEWAY_URL:
+        return "GATEWAY_URL is not configured — cannot search past tickets."
     try:
-        resp = httpx.get(
-            f"{TICKET_SERVICE_URL.rstrip('/')}/tickets",
-            params=params,
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-        tickets = resp.json()
+        async with streamablehttp_client(GATEWAY_URL) as (read, write, _):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "list_tickets_tickets_get",
+                    {"status": "resolved", "limit": limit},
+                )
+        texts = [c.text for c in result.content if hasattr(c, "text")]
+        tickets = json.loads(" ".join(texts)) if texts else []
     except Exception as exc:
         return f"Ticket search failed: {exc}"
 

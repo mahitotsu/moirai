@@ -150,10 +150,14 @@ class ComputeStack(cdk.Stack):
             role_name="agora-gateway-execution-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
         )
-        # Gateway needs to read its own credential providers (token vault)
+        # Gateway needs to call bedrock-agentcore service APIs for credential providers and
+        # policy engine authorization. Using wildcard to cover all required actions (the
+        # exact set depends on which features are enabled: GetApiKeyCredentialProvider,
+        # GetPolicyEngine, CheckAuthorizePermissions, AuthorizeAction,
+        # PartiallyAuthorizeActions, etc.).
         self.gateway_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["bedrock-agentcore:GetApiKeyCredentialProvider"],
+                actions=["bedrock-agentcore:*"],
                 resources=["*"],
             )
         )
@@ -575,6 +579,102 @@ class ComputeStack(cdk.Stack):
         cdk.CfnOutput(
             self, "AgentRuntimeRoleArn", value=self.agent_runtime_role.role_arn
         )
+
+        # -------------------------------------------------------------------------
+        # Per-agent IAM execution roles for Cedar policy-based access control.
+        # Each A2A agent gets its own role so the Policy Engine can identify callers
+        # by IAM principal ARN when authorizer_type is switched to AWS_IAM.
+        # -------------------------------------------------------------------------
+        for _agent_name, _lid in [
+            ("triage", "Triage"),
+            ("diagnosis", "Diagnosis"),
+            ("resolution", "Resolution"),
+        ]:
+            _r = iam.Role(
+                self,
+                f"{_lid}RuntimeRole",
+                role_name=f"agora-{_agent_name}-runtime-role",
+                assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=[
+                        "bedrock:InvokeModel",
+                        "bedrock:InvokeModelWithResponseStream",
+                    ],
+                    resources=[
+                        f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                        f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
+                        "arn:aws:bedrock:*::foundation-model/*",
+                    ],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["bedrock-agentcore:InvokeAgentRuntime"],
+                    resources=["*"],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=[
+                        "bedrock-agentcore:ListAgentRuntimes",
+                        "bedrock-agentcore:GetAgentRuntime",
+                        "bedrock-agentcore:ListAgentRuntimeEndpoints",
+                        "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                    ],
+                    resources=["*"],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["secretsmanager:GetSecretValue"],
+                    resources=[
+                        f"arn:aws:secretsmanager:{self.region}:{self.account}:secret:agora/*"
+                    ],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=[
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents",
+                    ],
+                    resources=["*"],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=[
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:BatchGetImage",
+                        "ecr:GetAuthorizationToken",
+                    ],
+                    resources=["*"],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=["bedrock:ApplyGuardrail"],
+                    resources=[
+                        f"arn:aws:bedrock:{self.region}:{self.account}:guardrail/*"
+                    ],
+                )
+            )
+            _r.add_to_policy(
+                iam.PolicyStatement(
+                    actions=[
+                        "bedrock-agentcore:RetrieveMemoryRecords",
+                        "bedrock-agentcore:BatchCreateMemoryRecords",
+                        "bedrock-agentcore:GetMemory",
+                        "bedrock-agentcore:ListMemoryRecords",
+                    ],
+                    resources=["*"],
+                )
+            )
+            setattr(self, f"{_agent_name}_runtime_role", _r)
+            cdk.CfnOutput(self, f"{_lid}RuntimeRoleArn", value=_r.role_arn)
 
         # -------------------------------------------------------------------------
         # IAM execution role for AgentCore Memory (LLM-based extraction jobs)
