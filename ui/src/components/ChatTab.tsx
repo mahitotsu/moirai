@@ -11,10 +11,10 @@ const SESSION_ID = crypto.randomUUID();
 const USER_ID = "demo-user";
 
 const DEMO_PROMPTS = [
-  "PostgreSQLへの接続が全部タイムアウトしている",
-  "nginxが断続的に502を返している",
-  "本番APIサーバーのメモリが90%を超えてアラートが出た",
-  "デプロイ後に一部エンドポイントが500を返すようになった",
+  "今対応中の重大インシデントはある？",
+  "fake-api-server のエラー率は今どのくらい？",
+  "過去のDBカテゴリの解決済みチケットを見せて",
+  "DynamoDB ProvisionedThroughputExceeded の一般的な原因は？",
 ];
 
 function ThinkingIndicator() {
@@ -68,7 +68,7 @@ export default function ChatTab() {
       id: "welcome",
       role: "assistant",
       content:
-        "こんにちは。Agora ITサービスデスクです。発生しているインシデントや技術的な問題を教えてください。トリアージ → 診断 → 解決提案の順でサポートします。",
+        "こんにちは。Agora ITサービスデスクです。インシデントの状況確認、エラーの調査、過去事例の照会など、IT運用に関するご質問をどうぞ。",
       timestamp: new Date(),
     },
   ]);
@@ -182,7 +182,7 @@ export default function ChatTab() {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="インシデントの内容を入力..."
+            placeholder="質問や問い合わせを入力..."
             disabled={isLoading}
             className="flex-1"
           />
