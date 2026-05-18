@@ -10,8 +10,10 @@ import aws_cdk.aws_ecr_assets as ecr_assets
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
 import aws_cdk.aws_lambda_event_sources as event_sources
+import aws_cdk.aws_logs as logs
 import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_secretsmanager as secretsmanager
+import aws_cdk.aws_sqs as sqs
 import aws_cdk.aws_ssm as ssm
 from aws_cdk.aws_s3_deployment import BucketDeployment, Source
 from constructs import Construct
@@ -150,54 +152,81 @@ class ComputeStack(cdk.Stack):
             role_name="agora-gateway-execution-role",
             assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
         )
-        # Gateway needs to call bedrock-agentcore service APIs for credential providers and
-        # policy engine authorization. Using wildcard to cover all required actions (the
-        # exact set depends on which features are enabled: GetApiKeyCredentialProvider,
-        # GetPolicyEngine, CheckAuthorizePermissions, AuthorizeAction,
-        # PartiallyAuthorizeActions, etc.).
         self.gateway_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["bedrock-agentcore:*"],
+                actions=[
+                    "bedrock-agentcore:InvokeAgentRuntime",
+                    "bedrock-agentcore:GetApiKeyCredentialProvider",
+                    "bedrock-agentcore:GetPolicyEngine",
+                    "bedrock-agentcore:CheckAuthorizePermissions",
+                    "bedrock-agentcore:AuthorizeAction",
+                    "bedrock-agentcore:PartiallyAuthorizeActions",
+                ],
                 resources=["*"],
             )
         )
 
         # -------------------------------------------------------------------------
-        # IAM execution role shared by Lambda functions
+        # IAM execution roles — one role per Lambda function (least privilege)
         # -------------------------------------------------------------------------
-        self.lambda_role = iam.Role(
-            self,
-            "LambdaExecutionRole",
-            role_name="agora-lambda-execution-role",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"
-                )
-            ],
+        _basic_exec = iam.ManagedPolicy.from_aws_managed_policy_name(
+            "service-role/AWSLambdaBasicExecutionRole"
         )
+        _dynamo_actions = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
+            "dynamodb:Query",
+            "dynamodb:Scan",
+        ]
 
-        # Allow DynamoDB access (both tables)
-        self.lambda_role.add_to_policy(
+        # ticket-service: tickets table + Secrets Manager (API key validation)
+        self.ticket_role = iam.Role(
+            self,
+            "TicketServiceRole",
+            role_name="agora-ticket-service-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[_basic_exec],
+        )
+        self.ticket_role.add_to_policy(
             iam.PolicyStatement(
-                actions=[
-                    "dynamodb:GetItem",
-                    "dynamodb:PutItem",
-                    "dynamodb:UpdateItem",
-                    "dynamodb:Query",
-                    "dynamodb:Scan",
-                ],
+                actions=_dynamo_actions,
                 resources=[
                     data.tickets_table.table_arn,
                     data.tickets_table.table_arn + "/index/*",
+                ],
+            )
+        )
+        self.services_api_key_secret.grant_read(self.ticket_role)
+
+        # asset-service: assets table + Secrets Manager (API key validation)
+        self.asset_role = iam.Role(
+            self,
+            "AssetServiceRole",
+            role_name="agora-asset-service-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[_basic_exec],
+        )
+        self.asset_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=_dynamo_actions,
+                resources=[
                     data.assets_table.table_arn,
                     data.assets_table.table_arn + "/index/*",
                 ],
             )
         )
+        self.services_api_key_secret.grant_read(self.asset_role)
 
-        # Allow chat-proxy Lambda to invoke the Gateway Agent AgentCore Runtime
-        self.lambda_role.add_to_policy(
+        # chat-proxy: invoke Gateway Agent runtime only
+        self.chat_proxy_role = iam.Role(
+            self,
+            "ChatProxyRole",
+            role_name="agora-chat-proxy-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[_basic_exec],
+        )
+        self.chat_proxy_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["bedrock-agentcore:InvokeAgentRuntime"],
                 resources=["*"],
@@ -226,15 +255,19 @@ class ComputeStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=512,
             timeout=cdk.Duration.seconds(30),
-            role=self.lambda_role,
+            role=self.ticket_role,
+            log_group=logs.LogGroup(
+                self, "TicketServiceFnLogs",
+                log_group_name="/aws/lambda/agora-ticket-service",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
             environment={
                 **common_env,
                 "TABLE_NAME": data.tickets_table.table_name,
                 "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
             },
         )
-        # Inject API key from Secrets Manager
-        self.services_api_key_secret.grant_read(self.lambda_role)
 
         self.asset_fn = lambda_.DockerImageFunction(
             self,
@@ -247,7 +280,13 @@ class ComputeStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=512,
             timeout=cdk.Duration.seconds(30),
-            role=self.lambda_role,
+            role=self.asset_role,
+            log_group=logs.LogGroup(
+                self, "AssetServiceFnLogs",
+                log_group_name="/aws/lambda/agora-asset-service",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
             environment={
                 **common_env,
                 "TABLE_NAME": data.assets_table.table_name,
@@ -283,7 +322,13 @@ class ComputeStack(cdk.Stack):
             memory_size=512,
             # Gateway Agent can take up to ~60 s for Triage→Diagnosis→Resolution
             timeout=cdk.Duration.seconds(120),
-            role=self.lambda_role,
+            role=self.chat_proxy_role,
+            log_group=logs.LogGroup(
+                self, "ChatProxyFnLogs",
+                log_group_name="/aws/lambda/agora-chat-proxy",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
             environment={
                 **common_env,
                 "AGENT_RUNTIME_ARN": _AGENT_RUNTIME_ARN,
@@ -339,11 +384,15 @@ class ComputeStack(cdk.Stack):
 
         # Origin 3: ticket-service Lambda Function URL (public auth=NONE, key via custom header)
         # Extracts domain from "https://xxxx.lambda-url…/" → "xxxx.lambda-url…"
+        #
+        # unsafe_unwrap() is intentional here: CloudFront custom origin headers do not support
+        # CloudFormation dynamic references ({{resolve:secretsmanager:...}}), so the secret value
+        # must be resolved at synth time. The key is stored in CFn state but never reaches the
+        # browser. Production alternative: CloudFront Key Value Store (KVS) + CF Functions.
         ticket_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.ticket_url.url))
         ticket_origin = origins.HttpOrigin(
             ticket_domain,
             custom_headers={
-                # Inject API key so the browser never needs to know it
                 "x-api-key": self.services_api_key_secret.secret_value.unsafe_unwrap(),
             },
             protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
@@ -745,6 +794,15 @@ class ComputeStack(cdk.Stack):
             )
         )
 
+        ticket_dispatcher_dlq = sqs.Queue(
+            self,
+            "TicketDispatcherDlq",
+            queue_name="agora-ticket-dispatcher-dlq",
+            retention_period=cdk.Duration.days(14),
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+        ticket_dispatcher_dlq.grant_send_messages(ticket_dispatcher_role)
+
         ticket_dispatcher_fn = lambda_.Function(
             self,
             "TicketDispatcherFn",
@@ -768,6 +826,12 @@ class ComputeStack(cdk.Stack):
             memory_size=256,
             timeout=cdk.Duration.seconds(120),
             role=ticket_dispatcher_role,
+            log_group=logs.LogGroup(
+                self, "TicketDispatcherFnLogs",
+                log_group_name="/aws/lambda/agora-ticket-dispatcher",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
             environment={
                 "AGENT_RUNTIME_ARN": _AGENT_RUNTIME_ARN,
             },
@@ -780,12 +844,18 @@ class ComputeStack(cdk.Stack):
                 batch_size=10,
                 bisect_batch_on_error=True,
                 retry_attempts=2,
+                report_batch_item_failures=True,
+                on_failure=event_sources.SqsDlq(ticket_dispatcher_dlq),
                 filters=[
                     lambda_.FilterCriteria.filter(
                         {"eventName": lambda_.FilterRule.is_equal("INSERT")}
                     )
                 ],
             )
+        )
+
+        cdk.CfnOutput(
+            self, "TicketDispatcherDlqUrl", value=ticket_dispatcher_dlq.queue_url
         )
 
         cdk.CfnOutput(

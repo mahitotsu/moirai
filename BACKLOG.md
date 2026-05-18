@@ -34,13 +34,13 @@
 
 ## V2: 自動化する
 
-- [x] 11. 監視対象 Lambda 実装 (fake-api-server: DynamoDB GetItem を定期呼び出し)
+- [x] 11. 監視対象 Lambda 実装 (fake-api-server: EC2 DescribeInstances を定期呼び出し)
 - [x] 12. EventBridge Scheduler 設定 (定期呼び出しで負荷生成・デフォルト無効)
   - [x] 12a. Makefile デモ制御ターゲット実装 (demo-start / demo-inject / demo-stop)
 - [x] 13. CloudWatch アラーム + EventBridge Rule + SQS(+DLQ) 設定
 - [x] 14. Bridge Lambda 実装 (アラーム → Ticket 自動起票)
   - [x] 14a. ticket-dispatcher Lambda 実装 (DynamoDB Streams → Gateway Agent 呼び出し・V4先取り)
-- [x] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → dynamodb:GetItem)
+- [x] 15. FIS 実験テンプレート作成 (inject-api-throttle-error → ec2:DescribeInstances)
 - [x] 16. CloudWatch MCP デプロイ・Registry登録 (Diagnosis Agent が障害メトリクスを参照するため)
   - [x] Registry登録をCDK Custom Resource (Lambda-backed) に移行・手動スクリプト廃止
   - [x] Diagnosis Agent に check_cloudwatch_alarms ツール追加

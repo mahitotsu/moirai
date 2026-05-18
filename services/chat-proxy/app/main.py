@@ -22,11 +22,11 @@ app.add_middleware(
 )
 
 _settings = Settings()
+_agentcore_client = boto3.client("bedrock-agentcore")
 
 
 def get_repository() -> AgentRepository:
-    client = boto3.client("bedrock-agentcore")
-    return AgentRepository(client, _settings.agent_runtime_arn)
+    return AgentRepository(_agentcore_client, _settings.agent_runtime_arn)
 
 
 RepoDep = Annotated[AgentRepository, Depends(get_repository)]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import boto3
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.models import Ticket, TicketCreate, TicketUpdate
@@ -11,6 +11,7 @@ from app.repository import TicketRepository
 from app.settings import Settings
 
 settings = Settings()  # type: ignore[call-arg]
+_dynamo_client = boto3.client("dynamodb")
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Ticket Service")
@@ -26,8 +27,7 @@ async def api_key_middleware(request: Request, call_next):
 
 
 def get_repository() -> TicketRepository:
-    client = boto3.client("dynamodb")
-    return TicketRepository(client, settings.table_name)
+    return TicketRepository(_dynamo_client, settings.table_name)
 
 
 RepoDep = Annotated[TicketRepository, Depends(get_repository)]
@@ -48,7 +48,7 @@ def list_tickets(
     repo: RepoDep,
     status: str | None = None,
     category: str | None = None,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=100),
 ) -> list[Ticket]:
     if status:
         return repo.list_by_status(status, limit)

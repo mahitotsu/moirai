@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from uuid import uuid4
 
 import boto3
@@ -8,25 +9,29 @@ from common.registry import discover_a2a_agents
 from strands import tool
 
 _AGENT_QUALIFIER = "DEFAULT"
+_agentcore_client = boto3.client("bedrock-agentcore")
 
 # Cache agent ARNs per process to avoid repeated Registry lookups
 _agent_arn_cache: dict[str, str] = {}
+_cache_lock = threading.Lock()
 
 
 def _find_agent_arn(agent_type: str) -> str | None:
     """Find the runtime ARN for an A2A agent by type tag, with process-level cache."""
-    if agent_type in _agent_arn_cache:
-        return _agent_arn_cache[agent_type]
+    with _cache_lock:
+        if agent_type in _agent_arn_cache:
+            return _agent_arn_cache[agent_type]
     for agent in discover_a2a_agents():
         if agent.get("agent_type") == agent_type:
-            _agent_arn_cache[agent_type] = agent["runtime_arn"]
+            with _cache_lock:
+                _agent_arn_cache[agent_type] = agent["runtime_arn"]
             return agent["runtime_arn"]
     return None
 
 
 def _invoke_a2a_agent(runtime_arn: str, message: str) -> str:
     """Invoke an A2A agent via AgentCore Runtime and return the response text."""
-    client = boto3.client("bedrock-agentcore")
+    client = _agentcore_client
 
     payload = json.dumps({
         "jsonrpc": "2.0",

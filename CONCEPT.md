@@ -41,22 +41,24 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 ```
 [監視対象システム]
   fake-api-server (Lambda) が EventBridge Scheduler から定期実行
-  → 正常時: agora-monitored-api-data に GetItem し 200 OK を返す
+  → 正常時: EC2 DescribeInstances でヘルスチェックを実行し 200 OK を返す
 
 [FIS 障害注入]
   FIS 実験テンプレートを起動
-  → DynamoDB GetItem API に ProvisionedThroughputExceededException を注入
+  → EC2 DescribeInstances API に ThrottlingException を注入
   → fake-api-server Lambda が boto3 ClientError で失敗し始める
   → CloudWatch Lambda/Errors が急上昇、アラームが ALARM 状態に遷移
-  → SNS トピックに通知
+  → EventBridge Default Bus に自動発行
 
 [イベント駆動レイヤー]
-  Bridge Lambda がSNS通知を受信
+  EventBridge Rule が ALARM 状態変化を SQS (agora-alarm-queue) へ転送
+  Bridge Lambda が SQS メッセージを受信
   → Ticket Service にチケットを自動起票 (status: open)
+  ticket-dispatcher Lambda が DynamoDB Streams で新規チケットを検知
   → Gateway Agent へ診断依頼を POST
 
 [エージェントパイプライン]
-  Gateway Agent (AG-UI protocol でSSEストリーミング)
+  Gateway Agent (AG-UI protocol / HTTP POST)
     ↓ A2A
   Triage Agent    : severity=high、category=api-error と分類
     ↓ A2A
@@ -72,7 +74,7 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 
 [React UI]
   Tickets タブ: 自動起票されたチケットと診断結果をリアルタイム確認
-  Chat タブ   : エージェントの思考プロセスをSSEで観察
+  Chat タブ   : エージェントの応答を確認・アドホック質問
 ```
 
 ### サブシナリオ：アドホック質問・問い合わせ
@@ -126,29 +128,30 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 ┌─────────────────────────────────────────────────────┐
 │ 監視対象システム                                      │
 │   fake-api-server (Lambda)                           │
-│     → DynamoDB GetItem (agora-monitored-api-data) を定期読み取り │
+│     → EC2 DescribeInstances でヘルスチェック実行      │
 │   EventBridge Scheduler → 定期実行 → メトリクス生成  │
-│   FIS 実験テンプレート  → DynamoDB API にエラー注入  │
+│   FIS 実験テンプレート  → EC2 API にエラー注入        │
 └─────────────────────────────────────────────────────┘
       ↓ 異常検知
 
 ┌─────────────────────────────────────────────────────┐
 │ アラーム + イベント駆動レイヤー                       │
-│   CloudWatch アラーム → SNS トピック                 │
-│   Bridge Lambda                                      │
+│   CloudWatch アラーム → EventBridge Default Bus      │
+│   EventBridge Rule → SQS (agora-alarm-queue)         │
+│   Bridge Lambda (SQS トリガー)                        │
 │     → Ticket Service: チケット自動起票               │
+│   ticket-dispatcher Lambda (DynamoDB Streams トリガー)│
 │     → Gateway Agent : 診断依頼 POST                  │
 └─────────────────────────────────────────────────────┘
-      ↕ AG-UI (SSE)
 
 [React UI]
-  ├── Chat タブ ────────── AG-UI (SSE) でエージェント思考を観察・アドホック質問
+  ├── Chat タブ ────────── AG-UI (HTTP POST) でアドホック質問・応答受信
   ├── Tickets タブ ──────── Ticket Service REST API 直接
   ├── Knowledge タブ ────── Ticket Service REST API 直接
   ├── Reports タブ (V3) ─── Reports Service REST API 直接
   └── Runbooks タブ (V4) ── SSM API 直接
 
-      ↕ AG-UI (SSE)
+      ↕ AG-UI (HTTP POST)
 
 [Gateway Agent]                      AgentCore Runtime / AG-UI protocol
       ↕ A2A
@@ -197,8 +200,8 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 横断サービス:
   AgentCore Registry      capability ベースの動的発見
   AgentCore Memory        会話の文脈・ユーザー固有の傾向
-  AgentCore Evaluations   解決提案の品質スコアリング (V2)
-  AgentCore Observability OTEL トレーシング → CloudWatch (V2)
+  AgentCore Evaluations   解決提案の品質スコアリング (V3)
+  AgentCore Observability OTEL トレーシング → CloudWatch (V3)
 ```
 
 ---
@@ -207,13 +210,13 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 
 | AgentCore機能 | 役割 | 採用理由 |
 |---|---|---|
-| Runtime (AG-UI) | Bridge Lambda からのPOSTと、UI向けSSEストリーミング | アラーム起動とChat UIの両方でエージェント出力をリアルタイム表示 |
+| Runtime (AG-UI) | ticket-dispatcher Lambda からのPOSTと、Chat UI向けHTTP応答 | アラーム起動とChat UIの両方でGateway Agentを起動する共通エンドポイント |
 | Runtime (A2A) | エージェント間直接通信 | Triage→Diagnosis→Resolutionの責務連鎖を疎結合に実現 |
 | Runtime (MCP) | Community/Observability MCPサーバー | 外部知識源をツールとして統一的に扱う |
 | Gateway | 内部サービスをMCPツール化 | 既存REST APIを変更せずエージェントから利用可能にする |
 | Registry | capabilityベースの動的発見 | エージェントがサービスのエンドポイントをハードコードしない |
 | Memory | 会話文脈・ユーザー傾向の記憶 | セッション継続性と個人化。業務データとは明確に分離 |
-| Policy (V3) | エージェント間のツールアクセスをCedarポリシーで制御 | 責務分割をコードではなくインフラレベルで強制。Triage/Diagnosis は読み取り専用、Resolution のみ書き込み許可 |
+| Policy (V2) | エージェント間のツールアクセスをCedarポリシーで制御 | 責務分割をコードではなくインフラレベルで強制。Triage/Diagnosis は読み取り専用、Resolution のみ書き込み許可 |
 | Evaluations (V3) | 解決提案の品質をLLM-as-a-Judgeで評価 | 主観的な品質を定量化し継続的改善の指標にする |
 | Observability (V3) | OTELによるエンドツーエンドトレーシング | Bridge Lambda → エージェント間の処理フローをCloudWatchで可視化 |
 
@@ -232,10 +235,10 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 
 | コンポーネント | 役割 | 実装 |
 |---|---|---|
-| fake-api-server | デモ用の被監視Lambdaサービス。DynamoDB（agora-monitored-api-data）を GetItem で定期読み取りし、正常メトリクスを生成する | Lambda (Python) |
+| fake-api-server | デモ用の被監視Lambdaサービス。EC2 DescribeInstances でヘルスチェックを実行し、正常メトリクスを生成する | Lambda (Python) |
 | EventBridge Scheduler | fake-api-server を定期呼び出しして CloudWatch メトリクスを生成。**デフォルト無効**。デモ・データ蓄積時のみ有効化する | EventBridge Scheduler |
-| CloudWatch アラーム | エラー率が閾値を超えたときにSNSへ通知 | CloudWatch + SNS |
-| FIS 実験テンプレート | DynamoDB API レベルで `ProvisionedThroughputExceededException` を注入し、Lambda のエラー率を急上昇させる | AWS FIS |
+| CloudWatch アラーム | エラー率が閾値を超えたとき EventBridge Default Bus へ自動発行 | CloudWatch + EventBridge |
+| FIS 実験テンプレート | EC2 DescribeInstances API に `ThrottlingException` を注入し、Lambda のエラー率を急上昇させる | AWS FIS |
 
 **デモ制御コマンド**
 
@@ -249,14 +252,16 @@ make demo-stop    # Scheduler 無効化 + 実行中 FIS 実験を強制終了（
 
 ### Bridge Lambda
 
-監視アラームをエージェントパイプラインへ橋渡しする中核コンポーネント。
+監視アラームをチケット起票へ橋渡しするコンポーネント。エージェント呼び出しは ticket-dispatcher が担う。
 
 ```
-SNS 通知受信
+SQS メッセージ受信 (EventBridge Default Bus → EventBridge Rule → SQS 経由)
   → Ticket Service: チケット自動起票
       { title: "CloudWatch ALARM: {alarm_name}", status: "open", source: "cloudwatch" }
+
+ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
   → Gateway Agent (AG-UI HTTP POST): 診断依頼を送信
-      { message: "アラーム '{alarm_name}' が発火しました。診断を開始してください。" }
+      { prompt: "新規インシデントチケット {ticket_id} が起票されました。診断を開始してください。" }
 ```
 
 ### 内部サービス
@@ -300,7 +305,7 @@ SNS 通知受信
 
 | タブ | 内容 | データ取得方法 | フェーズ |
 |---|---|---|---|
-| Chat | エージェントの思考プロセス観察・アドホック質問 | AG-UI / SSE（エージェント経由） | V1 |
+| Chat | アドホック質問・問い合わせ | AG-UI / HTTP POST（エージェント経由） | V1 |
 | Tickets | 自動起票されたインシデント一覧・詳細・診断結果 | Ticket Service REST API 直接 | V1 |
 | Knowledge | 解決済みパターンのブラウズ | Ticket Service REST API 直接 | V1 |
 | Reports | Analysis Agentの稼働レポート | Reports API 直接 | V3 |
@@ -321,8 +326,8 @@ SNS 通知受信
 | フロントエンド | React |
 | データストア | DynamoDB（Ticket / Asset / Reports / Knowledge） |
 | ランブック | AWS Systems Manager Automation Documents |
-| 監視対象システム | Lambda (DynamoDB GetItem) + EventBridge Scheduler + AWS FIS |
-| アラーム連携 | CloudWatch アラーム + SNS + Bridge Lambda |
+| 監視対象システム | Lambda (EC2 DescribeInstances) + EventBridge Scheduler + AWS FIS |
+| アラーム連携 | CloudWatch アラーム + EventBridge + SQS + Bridge Lambda |
 | 知識進化 | DynamoDB Streams + Lambda (V3) |
 | AWSリージョン | us-east-1 |
 | モデル | Claude Sonnet (us.anthropic.claude-sonnet-4-6) |
@@ -343,16 +348,17 @@ SNS 通知受信
 - AgentCore Memory
 
 **V2: 自動化する**
-- 監視対象システム（fake-api-server: DynamoDB GetItem を定期呼び出し）
+- 監視対象システム（fake-api-server: EC2 DescribeInstances を定期呼び出し）
 - EventBridge Scheduler（定期実行・メトリクス生成・デフォルト無効）
-- CloudWatch アラーム + SNS トピック
-- Bridge Lambda（アラーム → 自動起票 + エージェント起動）
-- FIS 実験テンプレート（DynamoDB API レベルでのスロットリングエラー注入）
+- CloudWatch アラーム + EventBridge + SQS
+- Bridge Lambda（アラーム → 自動起票）+ ticket-dispatcher Lambda（DynamoDB Streams → エージェント起動）
+- FIS 実験テンプレート（EC2 DescribeInstances API へのスロットリングエラー注入）
 - CloudWatch MCP（Diagnosis Agent が障害メトリクスを参照するため）
 - Makefile デモ制御ターゲット（demo-start / demo-inject / demo-stop）
 - Chat UI 改修・Gateway Agent システムプロンプト更新（アドホック質問・問い合わせ対応）
 - Bedrock Guardrails（Gateway Agent の禁止操作を Denied Topics でブロック）
 - Bedrock Prompt Caching（全エージェントに `CacheConfig(strategy="auto")` を設定）
+- AgentCore Policy（Gateway に Policy Engine 付与、Cedar ポリシーによるエージェント別ツールアクセス制御）
 
 **V3: 見える**
 - AgentCore Observability（OTEL計装）
@@ -394,11 +400,11 @@ SNS 通知受信
 
 ### V2: 自動化する
 
-11. 監視対象 Lambda 実装（fake-api-server: DynamoDB GetItem を定期呼び出し）
+11. 監視対象 Lambda 実装（fake-api-server: EC2 DescribeInstances を定期呼び出し）
 12. EventBridge Scheduler 設定（定期呼び出しで負荷生成）
-13. CloudWatch アラーム + SNS トピック設定
+13. CloudWatch アラーム + EventBridge + SQS 設定
 14. Bridge Lambda 実装（アラーム → Ticket 自動起票 + Gateway Agent POST）
-15. FIS 実験テンプレート作成（inject-api-throttle-error → dynamodb:GetItem）
+15. FIS 実験テンプレート作成（inject-api-throttle-error → ec2:DescribeInstances）
 16. CloudWatch MCP デプロイ・Registry登録（Diagnosis Agent が障害メトリクスを参照するため）
 17. Chat UI 改修・Gateway Agent システムプロンプト更新（インシデント起票 → アドホック質問・問い合わせ、禁止操作の明示）
 18. AgentCore Policy 設定（Gateway に Policy Engine 付与、エージェント別ツールアクセス制御）

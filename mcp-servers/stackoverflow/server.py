@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from client import StackOverflowClient
 from mcp.server.fastmcp import FastMCP
 
@@ -50,8 +52,6 @@ async def search_stackoverflow(
         lines.append(f"URL: {link}")
         body = item.get("body", "")
         if body:
-            # Strip HTML tags simply by removing angle-bracket content
-            import re
             text = re.sub(r"<[^>]+>", "", body)[:500].strip()
             if text:
                 lines.append(f"Preview: {text}...")

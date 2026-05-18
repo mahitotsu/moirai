@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from client import WikipediaClient
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("wikipedia-mcp")
 _client: WikipediaClient | None = None
 
 
@@ -12,6 +14,16 @@ def _get_client() -> WikipediaClient:
     if _client is None:
         _client = WikipediaClient()
     return _client
+
+
+@asynccontextmanager
+async def _lifespan(_: FastMCP) -> AsyncGenerator[None, None]:
+    yield
+    if _client is not None:
+        await _client.aclose()
+
+
+mcp = FastMCP("wikipedia-mcp", lifespan=_lifespan)
 
 
 @mcp.tool()
