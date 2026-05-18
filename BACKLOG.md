@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V2 — 自動化する  
-**次のタスク**: #18 AgentCore Policy 設定
+**次のタスク**: #19 エンドツーエンドデモ検証
 
 ---
 
@@ -49,7 +49,7 @@
   - [x] 受け付ける質問カテゴリ・禁止操作を Gateway Agent System Prompt に反映
   - [x] Bedrock Guardrails 設定 (FIS操作・実システム変更を Denied Topics でブロック)
   - [x] 全エージェントに Prompt Caching (`CacheConfig(strategy="auto")`) を設定
-- [ ] 18. AgentCore Policy 設定 (エージェント間ツールアクセス制御)
+- [x] 18. AgentCore Policy 設定 (エージェント間ツールアクセス制御)
   - AgentCore Gateway に Policy Engine を付与
   - Triage Agent: `search_*` のみ許可、チケット作成・更新は禁止
   - Diagnosis Agent: `search_*` のみ許可、書き込み系ツールは全禁止
