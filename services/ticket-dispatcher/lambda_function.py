@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
 import boto3
+from pydantic_settings import BaseSettings
+
+
+class _Settings(BaseSettings):
+    agent_runtime_arn: str = ""
+
+
+_AGENT_RUNTIME_ARN = _Settings().agent_runtime_arn
+_AGENT_QUALIFIER = "DEFAULT"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-_AGENT_RUNTIME_ARN = os.environ.get("AGENT_RUNTIME_ARN", "")
-_AGENT_QUALIFIER = "DEFAULT"
 
 _agentcore = boto3.client("bedrock-agentcore")
 

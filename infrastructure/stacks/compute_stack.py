@@ -750,7 +750,17 @@ class ComputeStack(cdk.Stack):
             "TicketDispatcherFn",
             function_name="agora-ticket-dispatcher",
             code=lambda_.Code.from_asset(
-                str(Path(__file__).parent.parent.parent / "services" / "ticket-dispatcher")
+                str(Path(__file__).parent.parent.parent / "services" / "ticket-dispatcher"),
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    platform="linux/arm64",
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output"
+                        " && cp lambda_function.py /asset-output/",
+                    ],
+                ),
             ),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
