@@ -40,7 +40,7 @@ def _create_ticket(alarm_name: str, reason: str) -> str:
                 f"理由: {reason}\n"
                 "自動診断パイプラインを起動します。"
             ),
-            "category": "database",
+            "category": "other",
             "severity": "high",
         }
     ).encode()
