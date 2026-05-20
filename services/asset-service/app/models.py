@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 AssetType = Literal["server", "database", "service", "network", "storage"]
 Environment = Literal["production", "staging", "development"]
@@ -19,6 +19,15 @@ class AssetCreate(BaseModel):
 
 
 class AssetUpdate(BaseModel):
+    # Pydantic V2 generates anyOf:[{type:string},{type:null}] for Optional fields,
+    # which AgentCore Gateway cannot validate. Override to emit plain type:string.
+    model_config = ConfigDict(json_schema_extra={
+        "properties": {
+            "status": {"type": "string", "enum": list(AssetStatus.__args__)},  # type: ignore[attr-defined]
+            "description": {"type": "string"},
+            "metadata": {"type": "object"},
+        }
+    })
     status: AssetStatus | None = None
     description: str | None = None
     metadata: dict[str, Any] | None = None

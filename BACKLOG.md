@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V2 — 自動化する  
-**次のタスク**: #19 エンドツーエンドデモ検証
+**次のタスク**: #20 OTEL計装 (AgentCore Observability)
 
 ---
 
@@ -54,7 +54,10 @@
   - Triage Agent: `search_*` のみ許可、チケット作成・更新は禁止
   - Diagnosis Agent: `search_*` のみ許可、書き込み系ツールは全禁止
   - Resolution Agent: `create_ticket` / `update_ticket_resolution` のみ許可
-- [ ] 19. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
+- [x] 19. エンドツーエンドデモ検証 (FIS起動 → アラーム → 診断 → チケット)
+  - Gateway execution role に `GetWorkloadAccessToken` + `GetResourceApiKey` を追加して Gateway → Lambda転送を修正
+  - Resolution Agent system_prompt を修正: 既存チケットを `status:resolved` で更新するよう指示
+  - E2E確認済み: Gateway MCP tool call → Lambda → DynamoDB ticket status=resolved
 
 ## V3: 見える
 

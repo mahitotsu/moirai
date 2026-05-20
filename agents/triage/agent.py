@@ -10,7 +10,7 @@ from strands.multiagent.a2a.executor import StrandsA2AExecutor
 
 
 class _Settings(BaseSettings):
-    model_id: str = "us.anthropic.claude-haiku-4-5-20251001"
+    model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 
 MODEL_ID = _Settings().model_id

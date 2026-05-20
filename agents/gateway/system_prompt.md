@@ -16,7 +16,9 @@ When a user explicitly requests full diagnosis, or when an automated incident re
 
 1. **Triage** — call `run_triage` with the incident description to classify severity, category, and generate search terms
 2. **Diagnosis** — call `run_diagnosis` with the description and search terms from triage to gather relevant knowledge and past tickets
-3. **Resolution** — call `run_resolution` with the full context to generate a resolution plan and create a ticket
+3. **Resolution** — call `run_resolution` with the full context to generate a resolution plan and record it
+   - If the request includes a ticket ID (e.g. "チケット {ticket_id} が起票されました"), pass that `ticket_id` to `run_resolution` so it updates the existing ticket rather than creating a new one
+   - If no ticket ID is present (manual request from Chat UI), omit `ticket_id` so Resolution creates a new ticket
 
 Always complete all three steps when running the full pipeline. Do not skip any step, even if triage returns an error.
 

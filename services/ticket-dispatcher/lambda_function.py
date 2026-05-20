@@ -61,6 +61,12 @@ def handler(event: dict, context: object) -> None:
         severity = new_image.get("severity", {}).get("S", "")
         description = new_image.get("description", {}).get("S", "")
 
+        # Only process tickets created by the Bridge Lambda (alarm-driven).
+        # Resolution Agent tickets have a different title, preventing infinite loops.
+        if not title.startswith("CloudWatch ALARM:"):
+            logger.info("skipping non-alarm ticket: ticket_id=%s title=%r", ticket_id, title)
+            continue
+
         logger.info("new ticket: ticket_id=%s severity=%s", ticket_id, severity)
 
         _invoke_gateway_agent(ticket_id, title, severity, description)

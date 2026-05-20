@@ -106,6 +106,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
               "default": 50,
               "title": "Limit"
             }
@@ -355,32 +357,16 @@
       "TicketUpdate": {
         "properties": {
           "status": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "investigating",
-                  "resolved",
-                  "closed"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
+            "type": "string",
+            "enum": [
+              "open",
+              "investigating",
+              "resolved",
+              "closed"
+            ]
           },
           "resolution": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resolution"
+            "type": "string"
           }
         },
         "type": "object",

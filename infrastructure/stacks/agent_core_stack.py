@@ -75,7 +75,7 @@ _A2A_AGENTS: list[dict] = [
         "description": "Triage Agent — classifies IT incidents by severity and category",
         "protocol": "A2A",
         "capability": "a2a-agent",
-        "env": {"MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001"},
+        "env": {"MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0"},
     },
     {
         "name": "diagnosis",
@@ -305,6 +305,7 @@ class AgentCoreStack(cdk.Stack):
             api_key=compute.services_api_key_secret.secret_value.unsafe_unwrap(),
             tags=[cdk.CfnTag(key="project", value="agora")],
         )
+
 
         # -------------------------------------------------------------------------
         # AgentCore Policy Engine — Cedar-based tool access control.

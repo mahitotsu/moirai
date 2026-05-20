@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from client import WikipediaClient
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import TransportSecuritySettings
 
 _client: WikipediaClient | None = None
 
@@ -23,7 +24,13 @@ async def _lifespan(_: FastMCP) -> AsyncGenerator[None, None]:
         await _client.aclose()
 
 
-mcp = FastMCP("wikipedia-mcp", lifespan=_lifespan)
+mcp = FastMCP(
+    "wikipedia-mcp",
+    lifespan=_lifespan,
+    host="0.0.0.0",
+    port=8080,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 
 @mcp.tool()
@@ -83,4 +90,4 @@ async def get_wikipedia_article(title: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http")

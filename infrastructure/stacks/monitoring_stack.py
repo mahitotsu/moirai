@@ -264,7 +264,7 @@ class MonitoringStack(cdk.Stack):
         fis_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["fis:InjectApiThrottleError"],
-                resources=[self.fake_api_role.role_arn],
+                resources=[f"arn:aws:fis:{self.region}:{self.account}:experiment/*"],
             )
         )
 

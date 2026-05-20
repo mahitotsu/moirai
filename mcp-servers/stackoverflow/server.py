@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import logging
 import re
+import sys
 
 from client import StackOverflowClient
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import TransportSecuritySettings
 
-mcp = FastMCP("stackoverflow-mcp")
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
+
+mcp = FastMCP(
+    "stackoverflow-mcp",
+    host="0.0.0.0",
+    port=8080,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 _client: StackOverflowClient | None = None
 
 
@@ -61,4 +71,4 @@ async def search_stackoverflow(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http")

@@ -157,12 +157,26 @@ class ComputeStack(cdk.Stack):
                 actions=[
                     "bedrock-agentcore:InvokeAgentRuntime",
                     "bedrock-agentcore:GetApiKeyCredentialProvider",
+                    "bedrock-agentcore:GetWorkloadAccessToken",
+                    "bedrock-agentcore:GetResourceApiKey",
                     "bedrock-agentcore:GetPolicyEngine",
                     "bedrock-agentcore:CheckAuthorizePermissions",
                     "bedrock-agentcore:AuthorizeAction",
                     "bedrock-agentcore:PartiallyAuthorizeActions",
                 ],
                 resources=["*"],
+            )
+        )
+        # AgentCore Identity stores the credential provider's API key in a Secrets
+        # Manager secret at bedrock-agentcore-identity!default/apikey/{name}.
+        # The Gateway retrieves this secret at request time to inject x-api-key.
+        self.gateway_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue"],
+                resources=[
+                    f"arn:aws:secretsmanager:{self.region}:{self.account}"
+                    ":secret:bedrock-agentcore-identity*"
+                ],
             )
         )
 
@@ -320,8 +334,8 @@ class ComputeStack(cdk.Stack):
             ),
             architecture=lambda_.Architecture.ARM_64,
             memory_size=512,
-            # Gateway Agent can take up to ~60 s for Triage→Diagnosis→Resolution
-            timeout=cdk.Duration.seconds(120),
+            # Full Triage→Diagnosis→Resolution pipeline takes ~180-300 s
+            timeout=cdk.Duration.seconds(300),
             role=self.chat_proxy_role,
             log_group=logs.LogGroup(
                 self, "ChatProxyFnLogs",
@@ -517,21 +531,6 @@ class ComputeStack(cdk.Stack):
                         ],
                         type="DENY",
                     ),
-                    bedrock.CfnGuardrail.TopicConfigProperty(
-                        name="SystemChangeExecution",
-                        definition=(
-                            "Lambda 関数の再起動・設定変更・デプロイ、EC2 操作、"
-                            "DB や IAM ポリシーの変更など実システムへの直接変更を実行する操作。"
-                        ),
-                        examples=[
-                            "Lambda を再起動してください",
-                            "Restart the Lambda function",
-                            "Deploy the new version",
-                            "設定を変更して",
-                            "Apply this configuration change to production",
-                        ],
-                        type="DENY",
-                    ),
                 ]
             ),
             tags=[cdk.CfnTag(key="project", value="agora")],
@@ -558,6 +557,8 @@ class ComputeStack(cdk.Stack):
                     f"arn:aws:bedrock:{self.region}::foundation-model/*",
                     f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
                     "arn:aws:bedrock:*::foundation-model/*",
+                    # AWS-managed cross-region inference profiles (us.anthropic.*, etc.)
+                    "arn:aws:bedrock:*::inference-profile/*",
                 ],
             )
         )
@@ -574,6 +575,10 @@ class ComputeStack(cdk.Stack):
                     "bedrock-agentcore:GetAgentRuntime",
                     "bedrock-agentcore:ListAgentRuntimeEndpoints",
                     "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                    "bedrock-agentcore:ListRegistries",
+                    "bedrock-agentcore:GetRegistry",
+                    "bedrock-agentcore:ListRegistryRecords",
+                    "bedrock-agentcore:GetRegistryRecord",
                 ],
                 resources=["*"],
             )
@@ -655,6 +660,7 @@ class ComputeStack(cdk.Stack):
                         f"arn:aws:bedrock:{self.region}::foundation-model/*",
                         f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
                         "arn:aws:bedrock:*::foundation-model/*",
+                        "arn:aws:bedrock:*::inference-profile/*",
                     ],
                 )
             )
@@ -671,6 +677,10 @@ class ComputeStack(cdk.Stack):
                         "bedrock-agentcore:GetAgentRuntime",
                         "bedrock-agentcore:ListAgentRuntimeEndpoints",
                         "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                        "bedrock-agentcore:ListRegistries",
+                        "bedrock-agentcore:GetRegistry",
+                        "bedrock-agentcore:ListRegistryRecords",
+                        "bedrock-agentcore:GetRegistryRecord",
                     ],
                     resources=["*"],
                 )
@@ -725,6 +735,29 @@ class ComputeStack(cdk.Stack):
             setattr(self, f"{_agent_name}_runtime_role", _r)
             cdk.CfnOutput(self, f"{_lid}RuntimeRoleArn", value=_r.role_arn)
 
+        # Diagnosis agent: direct CloudWatch + DynamoDB read for simplified tools
+        self.diagnosis_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudwatch:DescribeAlarms",
+                    "cloudwatch:DescribeAlarmsForMetric",
+                    "cloudwatch:GetMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics",
+                ],
+                resources=["*"],
+            )
+        )
+        self.diagnosis_runtime_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
+                resources=[
+                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-tickets",
+                    f"arn:aws:dynamodb:{self.region}:{self.account}:table/agora-tickets/index/*",
+                ],
+            )
+        )
+
         # -------------------------------------------------------------------------
         # IAM execution role for AgentCore Memory (LLM-based extraction jobs)
         # -------------------------------------------------------------------------
@@ -741,6 +774,7 @@ class ComputeStack(cdk.Stack):
                     f"arn:aws:bedrock:{self.region}::foundation-model/*",
                     f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
                     "arn:aws:bedrock:*::foundation-model/*",
+                    "arn:aws:bedrock:*::inference-profile/*",
                 ],
             )
         )
@@ -824,7 +858,7 @@ class ComputeStack(cdk.Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             memory_size=256,
-            timeout=cdk.Duration.seconds(120),
+            timeout=cdk.Duration.seconds(300),
             role=ticket_dispatcher_role,
             log_group=logs.LogGroup(
                 self, "TicketDispatcherFnLogs",

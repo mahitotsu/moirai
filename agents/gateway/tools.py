@@ -5,11 +5,15 @@ import threading
 from uuid import uuid4
 
 import boto3
+from botocore.config import Config
 from common.registry import discover_a2a_agents
 from strands import tool
 
 _AGENT_QUALIFIER = "DEFAULT"
-_agentcore_client = boto3.client("bedrock-agentcore")
+_agentcore_client = boto3.client(
+    "bedrock-agentcore",
+    config=Config(read_timeout=300, connect_timeout=10, retries={"max_attempts": 0}),
+)
 
 # Cache agent ARNs per process to avoid repeated Registry lookups
 _agent_arn_cache: dict[str, str] = {}
@@ -183,30 +187,43 @@ def run_resolution(
     incident_description: str,
     triage_result: str,
     diagnosis_result: str,
+    ticket_id: str = "",
 ) -> str:
-    """Generate a resolution plan and create an incident ticket.
+    """Generate a resolution plan and record it in the Ticket Service.
 
     Delegates to the Resolution Agent, which uses the triage classification
     and diagnosis findings to generate a tailored resolution plan, then
-    creates a ticket in the Ticket Service.
+    records it via the Ticket Service. If ticket_id is provided (automated
+    flow), updates the existing ticket; otherwise creates a new one.
 
     Args:
         incident_description: The original incident description from the user.
         triage_result: JSON classification from the Triage Agent.
         diagnosis_result: Knowledge search findings from the Diagnosis Agent.
+        ticket_id: Existing ticket ID to update (automated flow). Empty string
+            means no ticket exists yet and Resolution should create one.
 
     Returns:
-        Resolution plan text including the created ticket ID, or error message.
+        Resolution plan text including the ticket ID, or error message.
     """
     arn = _find_agent_arn("resolution")
     if not arn:
         return "Resolution Agent is not available in the Registry."
 
+    if ticket_id:
+        ticket_instruction = (
+            f"The incident has already been recorded as ticket {ticket_id}. "
+            f"Use the ticket update tool to attach your resolution plan to this existing ticket. "
+            f"Do NOT create a new ticket."
+        )
+    else:
+        ticket_instruction = "Use `create_ticket` to record this incident and its resolution plan."
+
     message = (
         f"Incident: {incident_description}\n\n"
         f"Triage:\n{triage_result}\n\n"
         f"Diagnosis:\n{diagnosis_result}\n\n"
-        "Please generate a resolution plan and create an incident ticket."
+        f"{ticket_instruction}"
     )
     try:
         return _invoke_a2a_agent(arn, message)

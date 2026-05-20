@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
 from strands.multiagent.a2a.executor import StrandsA2AExecutor
-from tools import search_community_knowledge, search_past_tickets
+from tools import check_cloudwatch_alarms, search_community_knowledge, search_past_tickets
 
 
 class _Settings(BaseSettings):
@@ -25,7 +25,7 @@ def _create_agent() -> Agent:
             cache_config=CacheConfig(strategy="auto"),
         ),
         system_prompt=_SYSTEM_PROMPT,
-        tools=[search_community_knowledge, search_past_tickets],
+        tools=[search_community_knowledge, search_past_tickets, check_cloudwatch_alarms],
     )
 
 

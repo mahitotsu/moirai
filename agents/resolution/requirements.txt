@@ -27,7 +27,6 @@ bedrock-agentcore==1.9.1
 boto3==1.43.7
     # via
     #   bedrock-agentcore
-    #   resolution
     #   strands-agents
 botocore==1.43.7
     # via
@@ -74,7 +73,6 @@ httpx==0.28.1
     # via
     #   a2a-sdk
     #   mcp
-    #   resolution
     #   strands-agents
 httpx-sse==0.4.3
     # via
@@ -143,7 +141,9 @@ pydantic==2.13.4
 pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.1
-    # via mcp
+    # via
+    #   mcp
+    #   resolution
 pyjwt==2.12.1
     # via mcp
 pymysql==1.1.3

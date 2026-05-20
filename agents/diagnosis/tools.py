@@ -1,128 +1,142 @@
 from __future__ import annotations
 
-import json
-from uuid import uuid4
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
-from common.registry import discover_by_capability
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+import httpx
+from boto3.dynamodb.conditions import Key
 from pydantic_settings import BaseSettings
 from strands import tool
 
+_STACK_API_BASE = "https://api.stackexchange.com/2.3"
+_GITHUB_API_BASE = "https://api.github.com"
+_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
+_TICKETS_TABLE = "agora-tickets"
+_REGION = "us-east-1"
+
 
 class _Settings(BaseSettings):
-    gateway_url: str = ""
+    github_token: str = ""
 
 
-_s = _Settings()
-GATEWAY_URL = _s.gateway_url
-_AGENT_QUALIFIER = "DEFAULT"
-
-# Maps runtime name → (tool_name, extra_args_template)
-_MCP_TOOL_MAP: dict[str, tuple[str, dict]] = {
-    "agora_stackoverflow": ("search_stackoverflow", {"num_results": 5}),
-    "agora_github_issues": ("search_github_issues", {"num_results": 5}),
-    "agora_wikipedia": ("search_wikipedia", {"num_results": 3}),
-    "agora_aws_docs": ("search_documentation", {}),
-}
+_github_token = _Settings().github_token
 
 
-def _call_mcp_tool_sync(runtime_arn: str, tool_name: str, arguments: dict) -> str:
-    """Invoke a tool on an AgentCore MCP runtime via invoke_agent_runtime."""
-    client = boto3.client("bedrock-agentcore")
-    session_id = str(uuid4())
+def _stackoverflow(query: str, tags: list[str] | None = None, num_results: int = 5) -> str:
+    params: dict = {
+        "order": "desc", "sort": "relevance", "q": query,
+        "site": "stackoverflow", "pagesize": num_results, "filter": "withbody",
+    }
+    if tags:
+        params["tagged"] = ";".join(tags)
+    try:
+        resp = httpx.get(f"{_STACK_API_BASE}/search/advanced", params=params, timeout=10)
+        items = resp.json().get("items", []) if resp.is_success else []
+    except Exception as exc:
+        return f"Stack Overflow search failed: {exc}"
+    if not items:
+        return "No Stack Overflow results found."
+    lines: list[str] = []
+    for item in items[:num_results]:
+        lines.append(f"### {item.get('title', 'Untitled')}")
+        lines.append(f"Score: {item.get('score', 0)} | Answered: {item.get('is_answered', False)}")
+        lines.append(f"URL: {item.get('link', '')}")
+        body = item.get("body", "")
+        if body:
+            text = re.sub(r"<[^>]+>", "", body)[:400].strip()
+            if text:
+                lines.append(f"Preview: {text}...")
+        lines.append("")
+    return "\n".join(lines)
 
-    # MCP initialize
-    init_payload = json.dumps({
-        "jsonrpc": "2.0",
-        "id": "1",
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "diagnosis-agent", "version": "1.0"},
-        },
-    }).encode()
-    client.invoke_agent_runtime(
-        agentRuntimeArn=runtime_arn,
-        qualifier=_AGENT_QUALIFIER,
-        payload=init_payload,
-        mcpSessionId=session_id,
-        mcpProtocolVersion="2024-11-05",
-    )
 
-    # MCP tools/call
-    call_payload = json.dumps({
-        "jsonrpc": "2.0",
-        "id": "2",
-        "method": "tools/call",
-        "params": {"name": tool_name, "arguments": arguments},
-    }).encode()
-    resp = client.invoke_agent_runtime(
-        agentRuntimeArn=runtime_arn,
-        qualifier=_AGENT_QUALIFIER,
-        payload=call_payload,
-        mcpSessionId=session_id,
-        mcpProtocolVersion="2024-11-05",
-    )
+def _github_issues(query: str, num_results: int = 5) -> str:
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if _github_token:
+        headers["Authorization"] = f"Bearer {_github_token}"
+    try:
+        resp = httpx.get(
+            f"{_GITHUB_API_BASE}/search/issues",
+            params={"q": query, "per_page": num_results, "sort": "best-match"},
+            headers=headers,
+            timeout=10,
+        )
+        items = resp.json().get("items", []) if resp.is_success else []
+    except Exception as exc:
+        return f"GitHub Issues search failed: {exc}"
+    if not items:
+        return "No GitHub Issues results found."
+    lines: list[str] = []
+    for item in items[:num_results]:
+        lines.append(f"### {item.get('title', 'Untitled')}")
+        lines.append(f"State: {item.get('state', '?')} | Comments: {item.get('comments', 0)}")
+        lines.append(f"URL: {item.get('html_url', '')}")
+        body = (item.get("body") or "")[:400].strip()
+        if body:
+            lines.append(f"Preview: {body}...")
+        lines.append("")
+    return "\n".join(lines)
 
-    body = resp["response"].read()
-    result = json.loads(body.decode() if isinstance(body, bytes) else body)
-    # MCP result format: {"result": {"content": [{"type": "text", "text": "..."}]}}
-    content = result.get("result", {})
-    if isinstance(content, dict):
-        parts = content.get("content", [])
-        if parts:
-            return " ".join(p.get("text", "") for p in parts if p.get("type") == "text")
-    return str(content)
+
+def _wikipedia(query: str, num_results: int = 3) -> str:
+    try:
+        resp = httpx.get(
+            _WIKIPEDIA_API,
+            params={
+                "action": "query", "list": "search", "srsearch": query,
+                "srlimit": num_results, "format": "json", "utf8": 1,
+            },
+            headers={"User-Agent": "agora/1.0"},
+            timeout=10,
+        )
+        results = resp.json().get("query", {}).get("search", []) if resp.is_success else []
+    except Exception as exc:
+        return f"Wikipedia search failed: {exc}"
+    if not results:
+        return "No Wikipedia results found."
+    lines: list[str] = []
+    for r in results:
+        raw = r.get("snippet", "")
+        snippet = raw.replace('<span class="searchmatch">', "").replace("</span>", "")
+        lines.append(f"- **{r.get('title', '')}**: {snippet}")
+    return "\n".join(lines)
 
 
 @tool
 def search_community_knowledge(query: str, tags: list[str] | None = None) -> str:
     """Search community knowledge sources for solutions to a technical problem.
 
-    Searches Stack Overflow, GitHub Issues, Wikipedia, and AWS documentation
-    in parallel using the query. All sources with capability="community-knowledge"
-    in the AgentCore Registry are queried.
+    Searches Stack Overflow, GitHub Issues, and Wikipedia in parallel.
 
     Args:
         query: The technical problem or error message to search for.
-        tags: Optional technology tags to narrow results (e.g. ["postgresql", "python"]).
+        tags: Optional technology tags to narrow results (e.g. ["dynamodb", "aws"]).
 
     Returns:
         Combined search results from all available community knowledge sources.
     """
-    runtimes = discover_by_capability("community-knowledge")
-    if not runtimes:
-        return "No community knowledge MCP servers are currently registered."
-
-    def _search_one(rt: dict) -> str:
-        name = rt["name"]
-        arn = rt["runtime_arn"]
-        entry = _MCP_TOOL_MAP.get(name)
-        if not entry:
-            return f"[{name}] Unknown runtime — skipped."
-        tool_name, extra = entry
-        args: dict = {"query": query, **extra}
-        if tags and tool_name == "search_stackoverflow":
-            args["tags"] = tags
-        try:
-            result = _call_mcp_tool_sync(arn, tool_name, args)
-            return f"=== {name} ===\n{result}"
-        except Exception as exc:
-            return f"=== {name} ===\nError: {exc}"
-
-    # Run searches concurrently using threads (sync tools, no event loop issues)
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    sources = {
+        "Stack Overflow": lambda: _stackoverflow(query, tags),
+        "GitHub Issues": lambda: _github_issues(query),
+        "Wikipedia": lambda: _wikipedia(query),
+    }
 
     parts: list[str] = []
-    with ThreadPoolExecutor(max_workers=len(runtimes)) as pool:
-        futures = {pool.submit(_search_one, rt): rt["name"] for rt in runtimes}
+    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        futures = {pool.submit(fn): name for name, fn in sources.items()}
         for future in as_completed(futures):
-            parts.append(future.result())
+            name = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = f"Error: {exc}"
+            parts.append(f"=== {name} ===\n{result}")
 
-    return "\n\n".join(parts) if parts else "No results returned from any knowledge source."
+    return "\n\n".join(parts) if parts else "No results returned from knowledge sources."
 
 
 @tool
@@ -136,21 +150,29 @@ def check_cloudwatch_alarms() -> str:
     Returns:
         Active CloudWatch alarms with details, or a message if none are found.
     """
-    runtimes = discover_by_capability("aws-observability")
-    if not runtimes:
-        return "No observability MCP servers are currently registered."
-
-    rt = runtimes[0]
     try:
-        result = _call_mcp_tool_sync(rt["runtime_arn"], "get_active_alarms", {})
-        return f"=== CloudWatch Active Alarms ===\n{result}"
+        cw = boto3.client("cloudwatch", region_name=_REGION)
+        resp = cw.describe_alarms(StateValue="ALARM", MaxRecords=50)
+        alarms = resp.get("MetricAlarms", [])
+        if not alarms:
+            return "=== CloudWatch Active Alarms ===\nNo active alarms found."
+        lines = ["=== CloudWatch Active Alarms ==="]
+        for a in alarms:
+            lines.append(f"\nAlarm: {a['AlarmName']}")
+            if a.get("AlarmDescription"):
+                lines.append(f"  Description: {a['AlarmDescription']}")
+            lines.append(f"  State: {a['StateValue']} since {a.get('StateUpdatedTimestamp', '?')}")
+            lines.append(f"  Metric: {a.get('Namespace', '?')}/{a.get('MetricName', '?')}")
+            if a.get("StateReason"):
+                lines.append(f"  Reason: {a['StateReason'][:300]}")
+        return "\n".join(lines)
     except Exception as exc:
         return f"CloudWatch alarm check failed: {exc}"
 
 
 @tool
-async def search_past_tickets(query: str, limit: int = 5) -> str:
-    """Search past resolved incident tickets for similar issues via AgentCore Gateway.
+def search_past_tickets(query: str, limit: int = 5) -> str:
+    """Search past resolved incident tickets for similar issues.
 
     Args:
         query: Keywords or description of the incident to match against past tickets.
@@ -159,29 +181,27 @@ async def search_past_tickets(query: str, limit: int = 5) -> str:
     Returns:
         List of matching past tickets with their descriptions and resolutions.
     """
-    if not GATEWAY_URL:
-        return "GATEWAY_URL is not configured — cannot search past tickets."
     try:
-        async with streamablehttp_client(GATEWAY_URL) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(
-                    "list_tickets_tickets_get",
-                    {"status": "resolved", "limit": limit},
-                )
-        texts = [c.text for c in result.content if hasattr(c, "text")]
-        tickets = json.loads(" ".join(texts)) if texts else []
+        dynamodb = boto3.resource("dynamodb", region_name=_REGION)
+        table = dynamodb.Table(_TICKETS_TABLE)
+        resp = table.query(
+            IndexName="status-created_at-index",
+            KeyConditionExpression=Key("status").eq("resolved"),
+            Limit=limit,
+            ScanIndexForward=False,
+        )
+        tickets = resp.get("Items", [])
     except Exception as exc:
         return f"Ticket search failed: {exc}"
-
     if not tickets:
-        return "No past tickets found matching this query."
-
+        return "No past resolved tickets found."
     lines: list[str] = []
     for t in tickets:
-        lines.append(f"Ticket {t.get('ticket_id', '?')}: {t.get('title', 'Untitled')}")
-        lines.append(f"  Category: {t.get('category', '?')} | Severity: {t.get('severity', '?')}")
+        lines.append(f"Ticket {t.get('ticket_id', '?')!s}: {t.get('title', 'Untitled')!s}")
+        lines.append(
+            f"  Category: {t.get('category', '?')!s} | Severity: {t.get('severity', '?')!s}"
+        )
         if t.get("resolution"):
-            lines.append(f"  Resolution: {t['resolution']}")
+            lines.append(f"  Resolution: {str(t['resolution'])[:300]}")
         lines.append("")
     return "\n".join(lines)
