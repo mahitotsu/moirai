@@ -31,11 +31,48 @@ _LAMBDA_DIR = Path(__file__).parent.parent / "lambda"
 _SPECS_DIR = Path(__file__).parent.parent / "specs"
 
 
+# ── モデル ID ──────────────────────────────────────────────────────────────
+_MODEL_HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+_MODEL_SONNET = "us.anthropic.claude-sonnet-4-6"
+
+# ── Lambda メモリ (MiB) ────────────────────────────────────────────────────
+_MEMORY_SERVICE_MB = 512
+_MEMORY_WORKER_MB = 256
+
+# ── Lambda タイムアウト ────────────────────────────────────────────────────
+_TIMEOUT_SERVICE = cdk.Duration.seconds(30)
+_TIMEOUT_LONG = cdk.Duration.seconds(300)
+
+# ── ログ保持 / DLQ 保持 ────────────────────────────────────────────────────
+_LOG_RETENTION = logs.RetentionDays.ONE_WEEK
+_DLQ_RETENTION = cdk.Duration.days(14)
+
+# ── DynamoDB イベントソース ────────────────────────────────────────────────
+_DYNAMO_BATCH_SIZE = 10
+_DYNAMO_RETRY_ATTEMPTS = 2
+
+# ── AgentCore ─────────────────────────────────────────────────────────────
+_GUARDRAIL_VERSION = "DRAFT"
+_CATALOG_VERSION = "3"
+_API_KEY_LENGTH = 32
+_MEMORY_EXPIRY_DAYS = 90
+
+# ── DynamoDB インデックス名 ────────────────────────────────────────────────
+_TICKETS_STATUS_INDEX = "status-created_at-index"
+_TICKETS_CATEGORY_INDEX = "category-created_at-index"
+_ASSETS_TYPE_INDEX = "type-name-index"
+_ASSETS_ENV_INDEX = "environment-type-index"
+
+
 class _Settings(BaseSettings):
     github_token: str = ""
 
 
-_GITHUB_TOKEN = _Settings().github_token
+def _github_env() -> dict[str, str]:
+    """GITHUB_TOKEN が設定されている場合のみ env dict を返す。"""
+    token = _Settings().github_token
+    return {"GITHUB_TOKEN": token} if token else {}
+
 
 _MCP_SERVERS: list[dict] = [
     {
@@ -50,7 +87,7 @@ _MCP_SERVERS: list[dict] = [
         "runtime_name": "agora_github_issues",
         "description": "GitHub Issues search MCP — searches GitHub for bug reports and discussions",
         "capability": "community-knowledge",
-        "env": {"GITHUB_TOKEN": _GITHUB_TOKEN},
+        "env": {},  # GITHUB_TOKEN は _github_env() で構築時に注入
     },
     {
         "name": "wikipedia",
@@ -81,21 +118,21 @@ _A2A_AGENTS: list[dict] = [
         "runtime_name": "agora_triage",
         "description": "Triage Agent — classifies IT incidents by severity and category",
         "capability": "a2a-agent",
-        "env": {"MODEL_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0"},
+        "env": {"MODEL_ID": _MODEL_HAIKU},
     },
     {
         "name": "diagnosis",
         "runtime_name": "agora_diagnosis",
         "description": "Diagnosis Agent — searches community knowledge and past tickets",
         "capability": "a2a-agent",
-        "env": {"MODEL_ID": "us.anthropic.claude-sonnet-4-6"},
+        "env": {"MODEL_ID": _MODEL_SONNET},
     },
     {
         "name": "resolution",
         "runtime_name": "agora_resolution",
         "description": "Resolution Agent — generates resolution plans and creates incident tickets",
         "capability": "a2a-agent",
-        "env": {"MODEL_ID": "us.anthropic.claude-sonnet-4-6"},
+        "env": {"MODEL_ID": _MODEL_SONNET},
     },
 ]
 
@@ -129,7 +166,7 @@ class AgoraStack(cdk.Stack):
             stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
         )
         self.tickets_table.add_global_secondary_index(
-            index_name="status-created_at-index",
+            index_name=_TICKETS_STATUS_INDEX,
             partition_key=dynamodb.Attribute(
                 name="status", type=dynamodb.AttributeType.STRING
             ),
@@ -138,7 +175,7 @@ class AgoraStack(cdk.Stack):
             ),
         )
         self.tickets_table.add_global_secondary_index(
-            index_name="category-created_at-index",
+            index_name=_TICKETS_CATEGORY_INDEX,
             partition_key=dynamodb.Attribute(
                 name="category", type=dynamodb.AttributeType.STRING
             ),
@@ -158,7 +195,7 @@ class AgoraStack(cdk.Stack):
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
         self.assets_table.add_global_secondary_index(
-            index_name="type-name-index",
+            index_name=_ASSETS_TYPE_INDEX,
             partition_key=dynamodb.Attribute(
                 name="type", type=dynamodb.AttributeType.STRING
             ),
@@ -167,7 +204,7 @@ class AgoraStack(cdk.Stack):
             ),
         )
         self.assets_table.add_global_secondary_index(
-            index_name="environment-type-index",
+            index_name=_ASSETS_ENV_INDEX,
             partition_key=dynamodb.Attribute(
                 name="environment", type=dynamodb.AttributeType.STRING
             ),
@@ -186,7 +223,7 @@ class AgoraStack(cdk.Stack):
             description="API key: AgentCore Gateway → internal FastAPI services",
             generate_secret_string=secretsmanager.SecretStringGenerator(
                 exclude_punctuation=True,
-                password_length=32,
+                password_length=_API_KEY_LENGTH,
             ),
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
@@ -388,10 +425,10 @@ class AgoraStack(cdk.Stack):
             self.agent_runtime_role.add_to_policy(iam.PolicyStatement(actions=_a, resources=_r))
 
         # Per-agent ロール (Cedar policy 用)
-        _per_agent = [
+        _per_agent_roles: dict[str, iam.Role] = {}
+        for _agent_name, _lid in [
             ("triage", "Triage"), ("diagnosis", "Diagnosis"), ("resolution", "Resolution")
-        ]
-        for _agent_name, _lid in _per_agent:
+        ]:
             _r = iam.Role(
                 self,
                 f"{_lid}RuntimeRole",
@@ -400,10 +437,10 @@ class AgoraStack(cdk.Stack):
             )
             for _a, _res in _agent_common_policies:
                 _r.add_to_policy(iam.PolicyStatement(actions=_a, resources=_res))
-            setattr(self, f"{_agent_name}_runtime_role", _r)
+            _per_agent_roles[_agent_name] = _r
 
         # Diagnosis: CloudWatch + DynamoDB 直接読み取り
-        self.diagnosis_runtime_role.add_to_policy(
+        _per_agent_roles["diagnosis"].add_to_policy(
             iam.PolicyStatement(
                 actions=[
                     "cloudwatch:DescribeAlarms",
@@ -415,7 +452,7 @@ class AgoraStack(cdk.Stack):
                 resources=["*"],
             )
         )
-        self.diagnosis_runtime_role.add_to_policy(
+        _per_agent_roles["diagnosis"].add_to_policy(
             iam.PolicyStatement(
                 actions=["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
                 resources=[
@@ -497,7 +534,7 @@ class AgoraStack(cdk.Stack):
             "AgoraMemory",
             name="agora_memory",
             description="Conversation context and user preference memory for Agora IT Service Desk",
-            event_expiry_duration=90,
+            event_expiry_duration=_MEMORY_EXPIRY_DAYS,
             memory_execution_role_arn=self.memory_execution_role.role_arn,
             memory_strategies=[
                 agentcore.CfnMemory.MemoryStrategyProperty(
@@ -572,10 +609,10 @@ class AgoraStack(cdk.Stack):
             ),
             protocol_configuration="HTTP",
             environment_variables={
-                "MODEL_ID": "us.anthropic.claude-sonnet-4-6",
+                "MODEL_ID": _MODEL_SONNET,
                 "MEMORY_ID": self.memory.attr_memory_id,
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
-                "GUARDRAIL_VERSION": "DRAFT",
+                "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
             },
             tags={"capability": "gateway", "project": "agora"},
         )
@@ -604,14 +641,14 @@ class AgoraStack(cdk.Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=512,
-            timeout=cdk.Duration.seconds(30),
+            memory_size=_MEMORY_SERVICE_MB,
+            timeout=_TIMEOUT_SERVICE,
             role=self.ticket_role,
             log_group=logs.LogGroup(
                 self,
                 "TicketServiceFnLogs",
                 log_group_name="/aws/lambda/agora-ticket-service",
-                retention=logs.RetentionDays.ONE_WEEK,
+                retention=_LOG_RETENTION,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
@@ -630,14 +667,14 @@ class AgoraStack(cdk.Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=512,
-            timeout=cdk.Duration.seconds(30),
+            memory_size=_MEMORY_SERVICE_MB,
+            timeout=_TIMEOUT_SERVICE,
             role=self.asset_role,
             log_group=logs.LogGroup(
                 self,
                 "AssetServiceFnLogs",
                 log_group_name="/aws/lambda/agora-asset-service",
-                retention=logs.RetentionDays.ONE_WEEK,
+                retention=_LOG_RETENTION,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
@@ -663,14 +700,14 @@ class AgoraStack(cdk.Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             ),
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=512,
-            timeout=cdk.Duration.seconds(300),
+            memory_size=_MEMORY_SERVICE_MB,
+            timeout=_TIMEOUT_LONG,
             role=self.chat_proxy_role,
             log_group=logs.LogGroup(
                 self,
                 "ChatProxyFnLogs",
                 log_group_name="/aws/lambda/agora-chat-proxy",
-                retention=logs.RetentionDays.ONE_WEEK,
+                retention=_LOG_RETENTION,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
@@ -707,7 +744,7 @@ class AgoraStack(cdk.Stack):
             self,
             "TicketDispatcherDlq",
             queue_name="agora-ticket-dispatcher-dlq",
-            retention_period=cdk.Duration.days(14),
+            retention_period=_DLQ_RETENTION,
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
         _dispatcher_dlq.grant_send_messages(_dispatcher_role)
@@ -732,14 +769,14 @@ class AgoraStack(cdk.Stack):
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=256,
-            timeout=cdk.Duration.seconds(300),
+            memory_size=_MEMORY_WORKER_MB,
+            timeout=_TIMEOUT_LONG,
             role=_dispatcher_role,
             log_group=logs.LogGroup(
                 self,
                 "TicketDispatcherFnLogs",
                 log_group_name="/aws/lambda/agora-ticket-dispatcher",
-                retention=logs.RetentionDays.ONE_WEEK,
+                retention=_LOG_RETENTION,
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
@@ -751,9 +788,9 @@ class AgoraStack(cdk.Stack):
             event_sources.DynamoEventSource(
                 self.tickets_table,
                 starting_position=lambda_.StartingPosition.LATEST,
-                batch_size=10,
+                batch_size=_DYNAMO_BATCH_SIZE,
                 bisect_batch_on_error=True,
-                retry_attempts=2,
+                retry_attempts=_DYNAMO_RETRY_ATTEMPTS,
                 report_batch_item_failures=True,
                 on_failure=event_sources.SqsDlq(_dispatcher_dlq),
                 filters=[
@@ -795,6 +832,7 @@ class AgoraStack(cdk.Stack):
         ticket_origin = origins.HttpOrigin(
             ticket_domain,
             custom_headers={
+                # CloudFront custom header は Secrets Manager ARN 参照を受け付けないため平文展開
                 "x-api-key": self.services_api_key_secret.secret_value.unsafe_unwrap(),
             },
             protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
@@ -873,7 +911,8 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         _mcp_runtimes: dict[str, agentcore.CfnRuntime] = {}
         for srv in _MCP_SERVERS:
-            env_vars = {k: v for k, v in srv["env"].items() if v}
+            _extra = _github_env() if srv["name"] == "github-issues" else {}
+            env_vars = {k: v for k, v in {**srv["env"], **_extra}.items() if v}
             cid = _logical_id(srv["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,
@@ -949,7 +988,7 @@ class AgoraStack(cdk.Stack):
                         container_uri=agent_images[agent["name"]].image_uri,
                     ),
                 ),
-                role_arn=getattr(self, f"{agent['name']}_runtime_role").role_arn,
+                role_arn=_per_agent_roles[agent["name"]].role_arn,
                 network_configuration=agentcore.CfnRuntime.NetworkConfigurationProperty(
                     network_mode="PUBLIC",
                 ),
@@ -986,7 +1025,7 @@ class AgoraStack(cdk.Stack):
             self.gateway_agent_runtime.node.add_dependency(_agent_gw_policy)
 
         for _agent in _A2A_AGENTS:
-            _role = getattr(self, f"{_agent['name']}_runtime_role")
+            _role = _per_agent_roles[_agent["name"]]
             _policy = _role.node.try_find_child("DefaultPolicy")
             if _policy and _agent["name"] in _a2a_runtimes:
                 _a2a_runtimes[_agent["name"]].node.add_dependency(_policy)
@@ -998,6 +1037,7 @@ class AgoraStack(cdk.Stack):
             self,
             "ServicesApiKeyCredential",
             name="agora-services-api-key",
+            # CfnApiKeyCredentialProvider は Secrets Manager ARN 参照を受け付けないため平文展開
             api_key=self.services_api_key_secret.secret_value.unsafe_unwrap(),
             tags=[cdk.CfnTag(key="project", value="agora")],
         )
@@ -1154,7 +1194,7 @@ class AgoraStack(cdk.Stack):
             self,
             "RegistryCatalog",
             service_token=registry_provider.service_token,
-            properties={"CatalogVersion": "3"},
+            properties={"CatalogVersion": _CATALOG_VERSION},
         )
 
         # =====================================================================
@@ -1166,6 +1206,13 @@ class AgoraStack(cdk.Stack):
             parameter_name="/agora/ticket-service-url",
             string_value=self.ticket_url.url,
             description="Ticket Service Lambda Function URL (for Bridge Lambda)",
+        )
+        ssm.StringParameter(
+            self,
+            "ServicesApiKeyNameParam",
+            parameter_name="/agora/services-api-key-name",
+            string_value=self.services_api_key_secret.secret_name,
+            description="Services API key secret name (for FaultInjectionStack BridgeFn)",
         )
 
         # =====================================================================

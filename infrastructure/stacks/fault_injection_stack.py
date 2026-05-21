@@ -17,6 +17,22 @@ from constructs import Construct
 
 _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
 
+# ── Lambda ────────────────────────────────────────────────────────────────
+_MEMORY_MB = 256
+_TIMEOUT_STANDARD = cdk.Duration.seconds(30)
+_TIMEOUT_BRIDGE = cdk.Duration.seconds(120)
+_TIMEOUT_VISIBILITY = cdk.Duration.seconds(180)
+
+# ── SQS ───────────────────────────────────────────────────────────────────
+_DLQ_RETENTION = cdk.Duration.days(14)
+_ALARM_QUEUE_RETENTION = cdk.Duration.days(1)
+_DLQ_MAX_RECEIVE = 3
+
+# ── CloudWatch Alarm ───────────────────────────────────────────────────────
+_ALARM_THRESHOLD = 1
+_ALARM_EVALUATION_PERIODS = 2
+_ALARM_DATAPOINTS = 2
+
 
 class FaultInjectionStack(cdk.Stack):
     """監視対象システム (fake-api) と障害注入シナリオ。
@@ -63,8 +79,8 @@ class FaultInjectionStack(cdk.Stack):
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=256,
-            timeout=cdk.Duration.seconds(30),
+            memory_size=_MEMORY_MB,
+            timeout=_TIMEOUT_STANDARD,
             role=self.fake_api_role,
         )
 
@@ -101,13 +117,13 @@ class FaultInjectionStack(cdk.Stack):
             metric=cloudwatch.Metric(
                 namespace="AWS/Lambda",
                 metric_name="Errors",
-                dimensions_map={"FunctionName": "agora-fake-api-server"},
+                dimensions_map={"FunctionName": self.fake_api_fn.function_name},
                 period=cdk.Duration.minutes(1),
                 statistic="Sum",
             ),
-            threshold=1,
-            evaluation_periods=2,
-            datapoints_to_alarm=2,
+            threshold=_ALARM_THRESHOLD,
+            evaluation_periods=_ALARM_EVALUATION_PERIODS,
+            datapoints_to_alarm=_ALARM_DATAPOINTS,
             comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
             treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
         )
@@ -119,7 +135,7 @@ class FaultInjectionStack(cdk.Stack):
             self,
             "AlarmDlq",
             queue_name="agora-alarm-dlq",
-            retention_period=cdk.Duration.days(14),
+            retention_period=_DLQ_RETENTION,
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
@@ -127,9 +143,9 @@ class FaultInjectionStack(cdk.Stack):
             self,
             "AlarmQueue",
             queue_name="agora-alarm-queue",
-            visibility_timeout=cdk.Duration.seconds(180),
-            retention_period=cdk.Duration.days(1),
-            dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=3, queue=_alarm_dlq),
+            visibility_timeout=_TIMEOUT_VISIBILITY,
+            retention_period=_ALARM_QUEUE_RETENTION,
+            dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=_DLQ_MAX_RECEIVE, queue=_alarm_dlq),
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
@@ -144,7 +160,7 @@ class FaultInjectionStack(cdk.Stack):
                 source=["aws.cloudwatch"],
                 detail_type=["CloudWatch Alarm State Change"],
                 detail={
-                    "alarmName": ["agora-fake-api-error-rate"],
+                    "alarmName": [self.alarm.alarm_name],
                     "state": {"value": ["ALARM"]},
                 },
             ),
@@ -198,15 +214,17 @@ class FaultInjectionStack(cdk.Stack):
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
-            memory_size=256,
-            timeout=cdk.Duration.seconds(120),
+            memory_size=_MEMORY_MB,
+            timeout=_TIMEOUT_BRIDGE,
             role=_bridge_role,
             environment={
                 # チケットサービス URL は SSM 経由 (AgoraStack に依存しない)
                 "TICKET_SERVICE_URL": ssm.StringParameter.value_for_string_parameter(
                     self, "/agora/ticket-service-url"
                 ),
-                "API_KEY_SECRET_NAME": "agora/services-api-key",
+                "API_KEY_SECRET_NAME": ssm.StringParameter.value_for_string_parameter(
+                    self, "/agora/services-api-key-name"
+                ),
             },
         )
 
