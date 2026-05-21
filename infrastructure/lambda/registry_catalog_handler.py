@@ -277,8 +277,15 @@ def _ensure_registry(control) -> str:
     resp = control.list_registries()
     for reg in resp.get("registries", []):
         if reg["name"] == REGISTRY_NAME:
-            if reg["status"] != "READY":
-                _wait_registry(control, reg["registryId"])
+            status = reg["status"]
+            if status == "READY":
+                return reg["registryId"]
+            if "FAILED" in status:
+                # 壊れた Registry を削除して再作成
+                logger.info(f"Registry in {status}, deleting and recreating")
+                control.delete_registry(registryId=reg["registryId"])
+                break
+            _wait_registry(control, reg["registryId"])
             return reg["registryId"]
 
     resp = control.create_registry(

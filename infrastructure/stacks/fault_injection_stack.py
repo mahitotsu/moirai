@@ -18,39 +18,25 @@ from constructs import Construct
 _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
 
 
-class MonitoringStack(cdk.Stack):
-    """監視対象システム — fake-api-server とアラーム自動化レイヤーをまとめたスタック。
+class FaultInjectionStack(cdk.Stack):
+    """監視対象システム (fake-api) と障害注入シナリオ。
 
-    Agora プラットフォーム本体（DataStack / ComputeStack）とは独立して
-    デプロイ・削除できる。
+    Agora プラットフォーム本体 (AgoraStack) とは独立して削除できる。
+    チケットサービス URL は SSM (/agora/ticket-service-url) 経由で参照する。
 
     アーキテクチャ:
       fake-api-server Lambda (EventBridge Scheduler で定期実行)
-        → ec2:DescribeInstances (ヘルスチェック模擬) ← FIS injection target
-        → Lambda/Errors メトリクス
-      CloudWatch Alarm
-        → EventBridge Default Bus (自動、SNS 不要)
-      EventBridge Rule (state=ALARM のみ通過)
-        → SQS Queue (agora-alarm-queue)
-            DLQ (agora-alarm-dlq): maxReceiveCount=3
-      Bridge Lambda (SQS トリガー)
-        → POST /tickets  Ticket Service REST API (チケット起票のみ)
-    エージェント起動は Agora 側 ticket-dispatcher Lambda (ComputeStack) が担う。
+        → ec2:DescribeInstances ← FIS ThrottlingException 注入ターゲット
+      CloudWatch Alarm → EventBridge Rule → SQS → Bridge Lambda
+        → POST /tickets (Ticket Service REST API でチケット起票)
     """
 
-    def __init__(
-        self,
-        scope: Construct,
-        construct_id: str,
-        **kwargs: object,
-    ) -> None:
+    def __init__(self, scope: Construct, construct_id: str, **kwargs: object) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # -------------------------------------------------------------------------
-        # fake-api-server Lambda — 監視対象システム
-        # EC2 DescribeInstances を定期呼び出しし稼働状況を確認する軽量ヘルスチェック。
-        # 追加リソース不要・常時コストゼロ。FIS のブラストラジアスはこの IAM ロールのみ。
-        # -------------------------------------------------------------------------
+        # =====================================================================
+        # fake-api-server — 監視対象 Lambda
+        # =====================================================================
         self.fake_api_role = iam.Role(
             self,
             "FakeApiRole",
@@ -82,14 +68,14 @@ class MonitoringStack(cdk.Stack):
             role=self.fake_api_role,
         )
 
-        # EventBridge Scheduler — デフォルト DISABLED。demo-start で有効化
-        self.scheduler_role = iam.Role(
+        # EventBridge Scheduler — デフォルト DISABLED。make demo-start で有効化
+        _scheduler_role = iam.Role(
             self,
             "SchedulerRole",
             role_name="agora-scheduler-role",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
         )
-        self.fake_api_fn.grant_invoke(self.scheduler_role)
+        self.fake_api_fn.grant_invoke(_scheduler_role)
 
         scheduler.CfnSchedule(
             self,
@@ -97,19 +83,16 @@ class MonitoringStack(cdk.Stack):
             name="agora-fake-api-server-schedule",
             schedule_expression="rate(1 minute)",
             state="DISABLED",
-            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
-                mode="OFF"
-            ),
+            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
             target=scheduler.CfnSchedule.TargetProperty(
                 arn=self.fake_api_fn.function_arn,
-                role_arn=self.scheduler_role.role_arn,
+                role_arn=_scheduler_role.role_arn,
             ),
         )
 
-        # -------------------------------------------------------------------------
-        # CloudWatch Alarm — fake-api-server の Lambda/Errors を監視
-        # 2分連続でエラーが発生したら ALARM → EventBridge へ自動発行
-        # -------------------------------------------------------------------------
+        # =====================================================================
+        # CloudWatch Alarm — fake-api-server Lambda/Errors を監視
+        # =====================================================================
         self.alarm = cloudwatch.Alarm(
             self,
             "FakeApiErrorAlarm",
@@ -129,15 +112,10 @@ class MonitoringStack(cdk.Stack):
             treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
         )
 
-        # -------------------------------------------------------------------------
-        # SQS — アラームイベントのバッファ + 信頼性保証
-        #
-        # Visibility Timeout (180s) > Bridge Lambda timeout (120s):
-        #   Lambda が処理中に同一メッセージが再配信されないよう保証
-        # DLQ + maxReceiveCount=3:
-        #   3 回失敗したメッセージを DLQ に退避し、消失を防ぎ後から調査・再処理可能にする
-        # -------------------------------------------------------------------------
-        alarm_dlq = sqs.Queue(
+        # =====================================================================
+        # SQS — アラームイベントのバッファ
+        # =====================================================================
+        _alarm_dlq = sqs.Queue(
             self,
             "AlarmDlq",
             queue_name="agora-alarm-dlq",
@@ -151,17 +129,13 @@ class MonitoringStack(cdk.Stack):
             queue_name="agora-alarm-queue",
             visibility_timeout=cdk.Duration.seconds(180),
             retention_period=cdk.Duration.days(1),
-            dead_letter_queue=sqs.DeadLetterQueue(
-                max_receive_count=3,
-                queue=alarm_dlq,
-            ),
+            dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=3, queue=_alarm_dlq),
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
-        # -------------------------------------------------------------------------
-        # EventBridge Rule — CloudWatch Alarm ALARM 状態変化のみ SQS へ転送
-        # CloudWatch Alarm は state change を Default Bus へ自動発行する (SNS 不要)
-        # -------------------------------------------------------------------------
+        # =====================================================================
+        # EventBridge Rule — ALARM 状態変化のみ SQS へ転送
+        # =====================================================================
         events.Rule(
             self,
             "AlarmStateChangeRule",
@@ -177,10 +151,10 @@ class MonitoringStack(cdk.Stack):
             targets=[targets.SqsQueue(self.alarm_queue)],
         )
 
-        # -------------------------------------------------------------------------
+        # =====================================================================
         # Bridge Lambda — SQS → Ticket Service REST API
-        # -------------------------------------------------------------------------
-        bridge_role = iam.Role(
+        # =====================================================================
+        _bridge_role = iam.Role(
             self,
             "BridgeRole",
             role_name="agora-bridge-role",
@@ -189,13 +163,12 @@ class MonitoringStack(cdk.Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaBasicExecutionRole"
                 ),
-                # SQS ポーリング (ReceiveMessage / DeleteMessage / GetQueueAttributes)
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaSQSQueueExecutionRole"
                 ),
             ],
         )
-        bridge_role.add_to_policy(
+        _bridge_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["secretsmanager:GetSecretValue"],
                 resources=[
@@ -205,7 +178,7 @@ class MonitoringStack(cdk.Stack):
             )
         )
 
-        bridge_fn = lambda_.Function(
+        _bridge_fn = lambda_.Function(
             self,
             "BridgeFn",
             function_name="agora-bridge",
@@ -227,9 +200,9 @@ class MonitoringStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=256,
             timeout=cdk.Duration.seconds(120),
-            role=bridge_role,
+            role=_bridge_role,
             environment={
-                # Ticket Service URL を SSM から動的解決 (cross-stack 依存なし)
+                # チケットサービス URL は SSM 経由 (AgoraStack に依存しない)
                 "TICKET_SERVICE_URL": ssm.StringParameter.value_for_string_parameter(
                     self, "/agora/ticket-service-url"
                 ),
@@ -237,42 +210,31 @@ class MonitoringStack(cdk.Stack):
             },
         )
 
-        bridge_fn.add_event_source(
-            event_sources.SqsEventSource(
-                self.alarm_queue,
-                batch_size=1,
-            )
+        _bridge_fn.add_event_source(
+            event_sources.SqsEventSource(self.alarm_queue, batch_size=1)
         )
 
-        # -------------------------------------------------------------------------
+        # =====================================================================
         # FIS — EC2 DescribeInstances スロットリング注入実験テンプレート
-        #
-        # aws:fis:inject-api-throttle-error で agora-fake-api-role への
-        # ec2:DescribeInstances 呼び出しをスロットリング。追加リソース不要・常時コストゼロ。
-        #
-        # デモシナリオ:
-        #   make demo-inject → fake-api-server の ec2:DescribeInstances が ThrottlingException
-        #   → Lambda/Errors 増加 → CloudWatch Alarm ALARM → EventBridge → SQS
-        #   → Bridge → チケット起票 → ticket-dispatcher → Gateway Agent → 診断・解決
-        # -------------------------------------------------------------------------
-        fis_role = iam.Role(
+        # =====================================================================
+        _fis_role = iam.Role(
             self,
             "FisRole",
             role_name="agora-fis-role",
             assumed_by=iam.ServicePrincipal("fis.amazonaws.com"),
         )
-        fis_role.add_to_policy(
+        _fis_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["fis:InjectApiThrottleError"],
                 resources=[f"arn:aws:fis:{self.region}:{self.account}:experiment/*"],
             )
         )
 
-        fis_template = fis.CfnExperimentTemplate(
+        _fis_template = fis.CfnExperimentTemplate(
             self,
             "ThrottleExperimentTemplate",
             description="EC2 API スロットリング注入 — fake-api-server 障害シナリオ",
-            role_arn=fis_role.role_arn,
+            role_arn=_fis_role.role_arn,
             tags={"Project": "agora", "Scenario": "inject-api-throttle-error"},
             targets={
                 "FakeApiRole": fis.CfnExperimentTemplate.ExperimentTemplateTargetProperty(
@@ -294,18 +256,13 @@ class MonitoringStack(cdk.Stack):
                 )
             },
             stop_conditions=[
-                fis.CfnExperimentTemplate.ExperimentTemplateStopConditionProperty(
-                    source="none",
-                )
+                fis.CfnExperimentTemplate.ExperimentTemplateStopConditionProperty(source="none")
             ],
         )
 
-        # -------------------------------------------------------------------------
-        # Outputs
-        # -------------------------------------------------------------------------
+        # =====================================================================
+        # OUTPUTS
+        # =====================================================================
         cdk.CfnOutput(self, "FakeApiServerFnArn", value=self.fake_api_fn.function_arn)
-        cdk.CfnOutput(self, "SchedulerRoleArn", value=self.scheduler_role.role_arn)
         cdk.CfnOutput(self, "AlarmQueueUrl", value=self.alarm_queue.queue_url)
-        cdk.CfnOutput(self, "AlarmDlqUrl", value=alarm_dlq.queue_url)
-        cdk.CfnOutput(self, "BridgeFnArn", value=bridge_fn.function_arn)
-        cdk.CfnOutput(self, "FisTemplateId", value=fis_template.attr_id)
+        cdk.CfnOutput(self, "FisTemplateId", value=_fis_template.attr_id)
