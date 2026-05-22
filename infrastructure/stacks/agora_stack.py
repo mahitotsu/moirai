@@ -1172,6 +1172,8 @@ class AgoraStack(cdk.Stack):
                     "bedrock-agentcore:GetRegistryRecord",
                     "bedrock-agentcore:DeleteRegistryRecord",
                     "bedrock-agentcore:DeleteRegistry",
+                    "bedrock-agentcore:CreateWorkloadIdentity",
+                    "bedrock-agentcore:ListWorkloadIdentities",
                 ],
                 resources=["*"],
             )
