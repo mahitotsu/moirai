@@ -58,6 +58,7 @@
   - Gateway execution role に `GetWorkloadAccessToken` + `GetResourceApiKey` を追加して Gateway → Lambda転送を修正
   - Resolution Agent system_prompt を修正: 既存チケットを `status:resolved` で更新するよう指示
   - E2E確認済み: Gateway MCP tool call → Lambda → DynamoDB ticket status=resolved
+  - 再検証 (426406d): Makefile スタック名修正 / Category enum 追加 + TicketUpdate に category 追加 / タイムアウト 300s→900s
 
 ## V3: 見える
 
