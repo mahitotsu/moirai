@@ -75,7 +75,7 @@ gen-specs:
 
 _REGION        := us-east-1
 _SCHEDULE_NAME := agora-fake-api-server-schedule
-_MONITORING_STACK := AgoraMonitoringStack
+_MONITORING_STACK := FaultInjectionStack
 
 demo-start:
 	@echo "==> Enabling EventBridge Scheduler (traffic starts, baseline metrics build up)..."
@@ -90,7 +90,7 @@ demo-start:
 	@echo "==> Done. Wait 2–3 minutes for baseline metrics, then run 'make demo-inject'."
 
 demo-inject:
-	@echo "==> Starting FIS experiment (DynamoDB GetItem throttle injection)..."
+	@echo "==> Starting FIS experiment (EC2 DescribeInstances throttle injection)..."
 	@TMPL_ID=$$(aws cloudformation describe-stacks \
 	  --stack-name $(_MONITORING_STACK) \
 	  --region $(_REGION) \

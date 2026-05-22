@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-Category = Literal["database", "network", "memory", "deploy", "other"]
+Category = Literal["database", "network", "memory", "deploy", "performance", "security", "other"]
 Severity = Literal["low", "medium", "high", "critical"]
 Status = Literal["open", "investigating", "resolved", "closed"]
 
@@ -23,10 +23,12 @@ class TicketUpdate(BaseModel):
         "properties": {
             "status": {"type": "string", "enum": list(Status.__args__)},  # type: ignore[attr-defined]
             "resolution": {"type": "string"},
+            "category": {"type": "string", "enum": list(Category.__args__)},  # type: ignore[attr-defined]
         }
     })
     status: Status | None = None
     resolution: str | None = None
+    category: Category | None = None
 
 
 class Ticket(BaseModel):

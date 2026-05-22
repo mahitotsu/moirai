@@ -77,6 +77,10 @@ class TicketRepository:
             expr_parts.append("resolution = :resolution")
             values[":resolution"] = {"S": data.resolution}
 
+        if data.category is not None:
+            expr_parts.append("category = :category")
+            values[":category"] = {"S": data.category}
+
         resp = self._client.update_item(
             TableName=self._table,
             Key={"ticket_id": {"S": ticket_id}},

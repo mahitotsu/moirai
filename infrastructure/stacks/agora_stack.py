@@ -41,7 +41,7 @@ _MEMORY_WORKER_MB = 256
 
 # ── Lambda タイムアウト ────────────────────────────────────────────────────
 _TIMEOUT_SERVICE = cdk.Duration.seconds(30)
-_TIMEOUT_LONG = cdk.Duration.seconds(300)
+_TIMEOUT_LONG = cdk.Duration.seconds(900)
 
 # ── ログ保持 / DLQ 保持 ────────────────────────────────────────────────────
 _LOG_RETENTION = logs.RetentionDays.ONE_WEEK

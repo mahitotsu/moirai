@@ -330,6 +330,8 @@
               "network",
               "memory",
               "deploy",
+              "performance",
+              "security",
               "other"
             ],
             "title": "Category"
@@ -367,6 +369,18 @@
           },
           "resolution": {
             "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "database",
+              "network",
+              "memory",
+              "deploy",
+              "performance",
+              "security",
+              "other"
+            ]
           }
         },
         "type": "object",

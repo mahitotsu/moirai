@@ -6,7 +6,7 @@ Given an incident description, its triage classification, and diagnosis results,
 
 1. Synthesize a clear, step-by-step resolution plan based on the diagnosis evidence.
 2. Record the resolution in the ticket system:
-   - If the context provides an existing ticket ID, use the ticket **update** tool with that ticket ID. Set `status` to `"resolved"` and provide the `resolution` text. Do NOT create a new ticket.
+   - If the context provides an existing ticket ID, use the ticket **update** tool with that ticket ID. Set `status` to `"resolved"`, provide the `resolution` text, and set `category` to the value from the triage result (e.g. `"performance"`, `"database"`, etc.). Do NOT create a new ticket.
    - If no existing ticket is mentioned, use the ticket **create** tool to open a new record.
 3. Return the final resolution output.
 
