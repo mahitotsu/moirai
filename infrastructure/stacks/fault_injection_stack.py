@@ -5,7 +5,6 @@ from pathlib import Path
 import aws_cdk as cdk
 import aws_cdk.aws_cloudwatch as cloudwatch
 import aws_cdk.aws_events as events
-import aws_cdk.aws_events_targets as targets
 import aws_cdk.aws_fis as fis
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_lambda as lambda_
@@ -91,7 +90,12 @@ class FaultInjectionStack(cdk.Stack):
             role_name="agora-scheduler-role",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
         )
-        self.fake_api_fn.grant_invoke(_scheduler_role)
+        _scheduler_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["lambda:InvokeFunction"],
+                resources=[self.fake_api_fn.function_arn],
+            )
+        )
 
         scheduler.CfnSchedule(
             self,
@@ -145,26 +149,54 @@ class FaultInjectionStack(cdk.Stack):
             queue_name="agora-alarm-queue",
             visibility_timeout=_TIMEOUT_VISIBILITY,
             retention_period=_ALARM_QUEUE_RETENTION,
-            dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=_DLQ_MAX_RECEIVE, queue=_alarm_dlq),
+            dead_letter_queue=sqs.DeadLetterQueue(
+                max_receive_count=_DLQ_MAX_RECEIVE, queue=_alarm_dlq
+            ),
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
 
         # =====================================================================
         # EventBridge Rule — ALARM 状態変化のみ SQS へ転送
         # =====================================================================
-        events.Rule(
+        alarm_rule = events.CfnRule(
             self,
             "AlarmStateChangeRule",
-            rule_name="agora-alarm-to-queue",
-            event_pattern=events.EventPattern(
-                source=["aws.cloudwatch"],
-                detail_type=["CloudWatch Alarm State Change"],
-                detail={
+            name="agora-alarm-to-queue",
+            event_pattern={
+                "source": ["aws.cloudwatch"],
+                "detail-type": ["CloudWatch Alarm State Change"],
+                "detail": {
                     "alarmName": [self.alarm.alarm_name],
                     "state": {"value": ["ALARM"]},
                 },
-            ),
-            targets=[targets.SqsQueue(self.alarm_queue)],
+            },
+            targets=[
+                events.CfnRule.TargetProperty(
+                    id="AlarmQueue",
+                    arn=self.alarm_queue.queue_arn,
+                )
+            ],
+        )
+
+        # EventBridge が SQS へ送信できるよう SQS リソースポリシーを明示設定
+        sqs.CfnQueuePolicy(
+            self,
+            "AlarmQueuePolicy",
+            queues=[self.alarm_queue.queue_url],
+            policy_document={
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"Service": "events.amazonaws.com"},
+                        "Action": "sqs:SendMessage",
+                        "Resource": self.alarm_queue.queue_arn,
+                        "Condition": {
+                            "ArnEquals": {"aws:SourceArn": alarm_rule.attr_arn},
+                        },
+                    }
+                ],
+            },
         )
 
         # =====================================================================

@@ -258,7 +258,12 @@ class AgoraStack(cdk.Stack):
                 ],
             )
         )
-        self.services_api_key_secret.grant_read(self.ticket_role)
+        self.ticket_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                resources=[self.services_api_key_secret.secret_arn],
+            )
+        )
 
         self.asset_role = iam.Role(
             self,
@@ -276,7 +281,12 @@ class AgoraStack(cdk.Stack):
                 ],
             )
         )
-        self.services_api_key_secret.grant_read(self.asset_role)
+        self.asset_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                resources=[self.services_api_key_secret.secret_arn],
+            )
+        )
 
         self.chat_proxy_role = iam.Role(
             self,
@@ -584,11 +594,7 @@ class AgoraStack(cdk.Stack):
             platform=ecr_assets.Platform.LINUX_ARM64,
         )
 
-        # CDK bootstrap ECR へのプル権限を AgentCore runtime ロールに付与
-        # (DockerImageAsset は Lambda と違い CfnRuntime への grant を自動化しないため)
-        _bootstrap_ecr = agent_images["gateway"].repository
-        _bootstrap_ecr.grant_pull(self.mcp_runtime_role)
-        _bootstrap_ecr.grant_pull(self.agent_runtime_role)
+        # ECR pull 権限は mcp_runtime_role / agent_runtime_role の add_to_policy("*") で確保済み
 
         # =====================================================================
         # AGENTCORE GATEWAY AGENT RUNTIME — 先に作成して ARN を Lambda に注入
@@ -747,7 +753,12 @@ class AgoraStack(cdk.Stack):
             retention_period=_DLQ_RETENTION,
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
-        _dispatcher_dlq.grant_send_messages(_dispatcher_role)
+        _dispatcher_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["sqs:SendMessage"],
+                resources=[_dispatcher_dlq.queue_arn],
+            )
+        )
 
         self.ticket_dispatcher_fn = lambda_.Function(
             self,
@@ -784,21 +795,25 @@ class AgoraStack(cdk.Stack):
                 "AGENT_RUNTIME_ARN": self.gateway_agent_runtime.attr_agent_runtime_arn,
             },
         )
-        self.ticket_dispatcher_fn.add_event_source(
-            event_sources.DynamoEventSource(
-                self.tickets_table,
-                starting_position=lambda_.StartingPosition.LATEST,
-                batch_size=_DYNAMO_BATCH_SIZE,
-                bisect_batch_on_error=True,
-                retry_attempts=_DYNAMO_RETRY_ATTEMPTS,
-                report_batch_item_failures=True,
-                on_failure=event_sources.SqsDlq(_dispatcher_dlq),
-                filters=[
-                    lambda_.FilterCriteria.filter(
-                        {"eventName": lambda_.FilterRule.is_equal("INSERT")}
-                    )
-                ],
-            )
+        # DynamoEventSource の内部実装は Grant.addToPrincipal(scope=...) を呼ぶ (deprecated)。
+        # _dispatcher_role は AWSLambdaDynamoDBExecutionRole で必要権限を既に保有するため
+        # EventSourceMapping を直接作成して不要な grant を回避する。
+        lambda_.EventSourceMapping(
+            self,
+            "TicketDispatcherEventSource",
+            target=self.ticket_dispatcher_fn,
+            event_source_arn=self.tickets_table.table_stream_arn,
+            starting_position=lambda_.StartingPosition.LATEST,
+            batch_size=_DYNAMO_BATCH_SIZE,
+            bisect_batch_on_error=True,
+            retry_attempts=_DYNAMO_RETRY_ATTEMPTS,
+            report_batch_item_failures=True,
+            on_failure=event_sources.SqsDlq(_dispatcher_dlq),
+            filters=[
+                lambda_.FilterCriteria.filter(
+                    {"eventName": lambda_.FilterRule.is_equal("INSERT")}
+                )
+            ],
         )
 
         # =====================================================================
@@ -1010,7 +1025,8 @@ class AgoraStack(cdk.Stack):
             )
 
         # IAM propagation: DefaultPolicy が AgentCore リソース作成前に確実に適用されるよう明示依存
-        # CDK は Role の ARN 参照には DependsOn を自動追加するが、DefaultPolicy (別リソース) には追加しない
+        # CDK は Role の ARN 参照には DependsOn を自動追加するが、
+        # DefaultPolicy (別リソース) には追加しない
         _gw_exec_policy = self.gateway_execution_role.node.try_find_child("DefaultPolicy")
         if _gw_exec_policy:
             self.agentcore_gateway.node.add_dependency(_gw_exec_policy)
