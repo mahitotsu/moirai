@@ -696,8 +696,8 @@ class AgoraStack(cdk.Stack):
             memory_execution_role_arn=self.memory_execution_role.role_arn,
             memory_strategies=[
                 agentcore.CfnMemory.MemoryStrategyProperty(
-                    semantic_memory_strategy=agentcore.CfnMemory.SemanticMemoryStrategyProperty(
-                        name="agora_semantic",
+                    summary_memory_strategy=agentcore.CfnMemory.SummaryMemoryStrategyProperty(
+                        name="agora_summary",
                         description="IT incident conversation history and context per user",
                     ),
                 ),
