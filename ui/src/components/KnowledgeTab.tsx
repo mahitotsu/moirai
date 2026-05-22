@@ -114,6 +114,11 @@ export default function KnowledgeTab() {
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
+      {/* Description */}
+      <div className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        解決済みインシデントから蓄積された知見ベース。各カードの<span className="font-medium text-foreground">解決策</span>が次の対応に活きます。
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>

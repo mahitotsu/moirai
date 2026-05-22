@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Bot, User, AlertCircle } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,8 +56,20 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       >
         {msg.isLoading ? (
           <ThinkingIndicator />
-        ) : (
+        ) : isUser ? (
           <p className="whitespace-pre-wrap">{msg.content}</p>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert
+            prose-p:my-1 prose-p:leading-relaxed
+            prose-headings:mb-1 prose-headings:mt-3 first:prose-headings:mt-0
+            prose-ul:my-1 prose-ol:my-1 prose-li:my-0
+            prose-table:text-xs prose-th:px-2 prose-th:py-1 prose-td:px-2 prose-td:py-1
+            prose-code:rounded prose-code:px-1 prose-code:text-xs
+            prose-pre:my-1 prose-pre:text-xs">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {msg.content}
+            </ReactMarkdown>
+          </div>
         )}
       </div>
     </div>

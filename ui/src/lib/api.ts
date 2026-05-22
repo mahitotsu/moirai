@@ -15,6 +15,25 @@ function ticketBase(): string {
   return TICKET_URL ? `${TICKET_URL}/tickets` : "/api/tickets";
 }
 
+const FETCH_TIMEOUT_MS = 20_000;
+const MAX_RETRIES = 1;
+
+async function fetchWithRetry(url: string, options: RequestInit, retries = MAX_RETRIES): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    return resp;
+  } catch (err) {
+    if (retries > 0 && err instanceof DOMException && err.name === "AbortError") {
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function listTickets(filters?: {
   status?: string;
   category?: string;
@@ -25,7 +44,7 @@ export async function listTickets(filters?: {
   if (filters?.category) params.set("category", filters.category);
   if (filters?.limit) params.set("limit", String(filters.limit));
   const qs = params.toString();
-  const resp = await fetch(`${ticketBase()}${qs ? `?${qs}` : ""}`, {
+  const resp = await fetchWithRetry(`${ticketBase()}${qs ? `?${qs}` : ""}`, {
     headers: ticketHeaders(),
   });
   if (!resp.ok) throw new Error(`Ticket Service error: ${resp.status}`);

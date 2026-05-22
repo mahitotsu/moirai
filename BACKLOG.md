@@ -81,6 +81,8 @@
 - [ ] 29. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
 - [ ] 30. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
 - [ ] 31. React UI Runbooks タブ追加
+- [ ] 32. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
+- [ ] 33. `lesson_learned` フィールド実装 (Resolution Agent が close 時に1文の教訓を書き込む。Knowledge タブはこのフィールドを `resolution` の代わりに主表示に使用)
 
 ---
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, AlertCircle, ExternalLink } from "lucide-react";
+import { RefreshCw, AlertCircle, Inbox } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ja } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { listTickets } from "@/lib/api";
 import type { Ticket, Severity, Status, Category } from "@/types";
 
@@ -31,11 +32,70 @@ function statusVariant(s: Status): BadgeProps["variant"] {
   return s as BadgeProps["variant"];
 }
 
+type TimelineVariant = "open" | "investigating" | "resolved";
+
+function TimelineStep({
+  label,
+  time,
+  content,
+  variant,
+  isLast,
+}: {
+  label: string;
+  time?: string;
+  content?: string;
+  variant: TimelineVariant;
+  isLast: boolean;
+}) {
+  const dotColor: Record<TimelineVariant, string> = {
+    open: "bg-slate-400",
+    investigating: "bg-amber-500",
+    resolved: "bg-green-500",
+  };
+
+  return (
+    <div className="flex gap-2.5">
+      <div className="flex flex-col items-center">
+        <div className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", dotColor[variant])} />
+        {!isLast && <div className="mt-1 w-px flex-1 bg-border" />}
+      </div>
+      <div className={cn("min-w-0 flex-1", !isLast && "pb-3")}>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs font-semibold">{label}</span>
+          {time && (
+            <span className="text-[10px] text-muted-foreground">{time}</span>
+          )}
+        </div>
+        {content && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            {content}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TicketCard({ ticket }: { ticket: Ticket }) {
-  const ago = formatDistanceToNow(new Date(ticket.created_at), {
+  const createdAgo = formatDistanceToNow(new Date(ticket.created_at), {
     addSuffix: true,
     locale: ja,
   });
+  const updatedAgo = formatDistanceToNow(new Date(ticket.updated_at), {
+    addSuffix: true,
+    locale: ja,
+  });
+  const resolvedAgo = ticket.resolved_at
+    ? formatDistanceToNow(new Date(ticket.resolved_at), {
+        addSuffix: true,
+        locale: ja,
+      })
+    : null;
+
+  const isInvestigating = ["investigating", "resolved", "closed"].includes(
+    ticket.status
+  );
+  const isResolved = ["resolved", "closed"].includes(ticket.status);
 
   return (
     <Card className="transition-shadow hover:shadow-md">
@@ -54,18 +114,33 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
           </div>
         </div>
         <CardDescription className="text-xs">
-          #{ticket.ticket_id.slice(0, 8)} · {ticket.category} · {ago}
+          #{ticket.ticket_id.slice(0, 8)} · {ticket.category}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="line-clamp-2 text-sm text-muted-foreground">
-          {ticket.description}
-        </p>
-        {ticket.resolution && (
-          <div className="mt-3 rounded-md bg-green-50 p-2.5 text-xs text-green-800">
-            <span className="font-semibold">解決策: </span>
-            {ticket.resolution}
-          </div>
+        <TimelineStep
+          label="起票"
+          time={createdAgo}
+          content={ticket.description}
+          variant="open"
+          isLast={!isInvestigating}
+        />
+        {isInvestigating && (
+          <TimelineStep
+            label="調査中"
+            time={!isResolved ? updatedAgo : undefined}
+            variant="investigating"
+            isLast={!isResolved}
+          />
+        )}
+        {isResolved && (
+          <TimelineStep
+            label="解決"
+            time={resolvedAgo ?? updatedAgo}
+            content={ticket.resolution}
+            variant="resolved"
+            isLast
+          />
         )}
       </CardContent>
     </Card>
@@ -82,9 +157,15 @@ function TicketSkeleton() {
         </div>
         <Skeleton className="mt-1 h-3 w-1/2" />
       </CardHeader>
-      <CardContent>
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="mt-1 h-3 w-4/5" />
+      <CardContent className="space-y-3">
+        <div className="flex gap-2.5">
+          <Skeleton className="mt-1 h-2 w-2 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-1">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -157,10 +238,13 @@ export default function TicketsTab() {
         </Select>
 
         <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-          {!loading && !error && (
-            <span>{tickets.length} 件</span>
-          )}
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          {!loading && !error && <span>{tickets.length} 件</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+          >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -187,7 +271,7 @@ export default function TicketsTab() {
           </div>
         ) : tickets.length === 0 ? (
           <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
-            <ExternalLink className="h-8 w-8 opacity-30" />
+            <Inbox className="h-8 w-8 opacity-30" />
             <p className="text-sm">チケットが見つかりません</p>
           </div>
         ) : (
