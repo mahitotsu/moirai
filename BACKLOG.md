@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V3 — 見える  
-**次のタスク**: #22 Analysis Agent 実装・デプロイ
+**次のタスク**: #23 AgentCore Evaluations 設定
 
 ---
 
