@@ -86,6 +86,7 @@
 ## 保守・品質改善
 
 - [x] ハードコード除去リファクタリング (0c532ef) — AWS リージョン・テーブル名・モデルID・Secret パスを環境変数/CDKトークンに移行
+- [x] CDK deprecated 警告解消 (61655e9) — grant_* メソッドを add_to_policy に置換・DynamoEventSource/SqsQueue target をL1に置換
 
 ## 完了済み
 
