@@ -72,7 +72,11 @@
   - `mcp-servers/cost-explorer/` 作成・ECR プッシュ・`AgoraCostExplorerRuntime` & Endpoint 作成
   - `mcp_runtime_role` に CE / Budgets / FreeTier / CostOptimizationHub 権限を追加
   - Registry CatalogVersion を 4 にバンプして再登録
-- [ ] 22. Analysis Agent 実装・デプロイ
+- [x] 22. Analysis Agent 実装・デプロイ
+  - `agents/analysis/` 作成: Strands A2A + boto3 tools (get_ticket_stats, get_lambda_error_metrics, get_bedrock_costs, save_report)
+  - `services/reports-service/` 作成: FastAPI (GET/POST /reports)、`agora-reports` DynamoDB テーブル追加
+  - Gateway Agent に `run_analysis` ツール追加・system_prompt 更新
+  - CDK: agora-reports テーブル / ReportsServiceFn / AgoraAnalysisRuntime / CloudFront `/api/reports*` / CatalogVersion→5
 - [ ] 23. AgentCore Evaluations 設定
   - Online 評価: Gateway Agent に HELPFULNESS / FAITHFULNESS
   - Online 評価: Triage Agent に TOOL_SELECTION_ACCURACY

@@ -16,7 +16,7 @@ with patch("boto3.client", return_value=MagicMock()):
 def _streams_event(
     event_name: str,
     ticket_id: str = "t-1",
-    title: str = "Test Incident",
+    title: str = "CloudWatch ALARM: Test Incident",
     severity: str = "high",
     description: str = "EC2 DescribeInstances throttled",
 ) -> dict:
@@ -41,10 +41,10 @@ def _streams_event(
 def test_insert_triggers_agent_with_ticket_fields():
     with patch.object(lambda_function, "_invoke_gateway_agent") as mock:
         lambda_function.handler(
-            _streams_event("INSERT", ticket_id="t-42", title="DB down", severity="critical"),
+            _streams_event("INSERT", ticket_id="t-42", title="CloudWatch ALARM: DB down", severity="critical"),
             None,
         )
-    mock.assert_called_once_with("t-42", "DB down", "critical", "EC2 DescribeInstances throttled")
+    mock.assert_called_once_with("t-42", "CloudWatch ALARM: DB down", "critical", "EC2 DescribeInstances throttled")
 
 
 def test_modify_is_ignored():

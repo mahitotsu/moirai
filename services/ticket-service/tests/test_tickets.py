@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Generator
 
 import pytest
@@ -99,6 +100,7 @@ def test_list_by_status(repo: TicketRepository) -> None:
 
 def test_list_by_category(repo: TicketRepository) -> None:
     repo.create(TicketCreate(title="Cat test", description="d", category="other", severity="low"))
+    time.sleep(1)  # GSI eventual consistency
     tickets = repo.list_by_category("other")
     assert len(tickets) >= 1
     assert all(t.category == "other" for t in tickets)
