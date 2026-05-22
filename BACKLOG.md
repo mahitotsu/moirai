@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V2 — 自動化する  
-**次のタスク**: #20 OTEL計装 (AgentCore Observability)
+**フェーズ**: V3 — 見える  
+**次のタスク**: #22 Analysis Agent 実装・デプロイ
 
 ---
 
@@ -62,8 +62,16 @@
 
 ## V3: 見える
 
-- [ ] 20. OTEL計装 (AgentCore Observability)
-- [ ] 21. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
+- [x] 20. OTEL計装 (AgentCore Observability)
+  - 全エージェント (gateway/triage/diagnosis/resolution) に `aws-opentelemetry-distro` を追加
+  - Dockerfile CMD を `opentelemetry-instrument python agent.py` に変更 (ADOT自動計装)
+  - 全エージェントロール・MCPロールに X-Ray 送信権限を追加 (CDK)
+  - `make obs-setup` ターゲット追加 (CloudWatch Transaction Search 一回限りのアカウント設定)
+- [x] 21. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
+  - `awslabs.billing-cost-management-mcp-server` を採用（旧 `awslabs-cost-explorer-mcp-server` は yanked）
+  - `mcp-servers/cost-explorer/` 作成・ECR プッシュ・`AgoraCostExplorerRuntime` & Endpoint 作成
+  - `mcp_runtime_role` に CE / Budgets / FreeTier / CostOptimizationHub 権限を追加
+  - Registry CatalogVersion を 4 にバンプして再登録
 - [ ] 22. Analysis Agent 実装・デプロイ
 - [ ] 23. AgentCore Evaluations 設定
   - Online 評価: Gateway Agent に HELPFULNESS / FAITHFULNESS

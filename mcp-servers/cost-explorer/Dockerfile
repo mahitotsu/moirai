@@ -1,13 +1,12 @@
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
-COPY triage/pyproject.toml triage/requirements.txt ./
+COPY pyproject.toml requirements.txt ./
 RUN uv pip install --system --no-cache -r requirements.txt
 
 FROM python:3.12-slim
 WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY triage/agent.py triage/system_prompt.md ./
-EXPOSE 9000
-CMD ["opentelemetry-instrument", "python", "agent.py"]
+ENV FASTMCP_LOG_LEVEL=WARNING
+CMD ["awslabs.billing-cost-management-mcp-server"]

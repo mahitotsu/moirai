@@ -1,0 +1,7 @@
+[project]
+name = "cost-explorer"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "awslabs.billing-cost-management-mcp-server>=0.0.22",
+]

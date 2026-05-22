@@ -12,4 +12,4 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY resolution/agent.py resolution/system_prompt.md ./
 COPY common/ ./common/
 EXPOSE 9000
-CMD ["python", "agent.py"]
+CMD ["opentelemetry-instrument", "python", "agent.py"]

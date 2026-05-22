@@ -53,7 +53,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "3"
+_CATALOG_VERSION = "4"
 _API_KEY_LENGTH = 32
 _MEMORY_EXPIRY_DAYS = 90
 
@@ -107,6 +107,13 @@ _MCP_SERVERS: list[dict] = [
         "name": "cloudwatch",
         "runtime_name": "agora_cloudwatch",
         "description": "CloudWatch MCP — metrics, alarms, Logs Insights (awslabs/mcp)",
+        "capability": "aws-observability",
+        "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
+    },
+    {
+        "name": "cost-explorer",
+        "runtime_name": "agora_cost_explorer",
+        "description": "Cost Explorer MCP — Bedrock & AWS billing cost analysis (awslabs/mcp)",
         "capability": "aws-observability",
         "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
     },
@@ -336,6 +343,43 @@ class AgoraStack(cdk.Stack):
                 ],
                 ["*"],
             ),
+            (
+                [
+                    "xray:PutTraceSegments",
+                    "xray:PutSpans",
+                    "xray:PutSpansForIndexing",
+                    "xray:GetSamplingRules",
+                    "xray:GetSamplingTargets",
+                    "xray:GetSamplingStatisticSummaries",
+                ],
+                ["*"],
+            ),
+            (
+                [
+                    "ce:GetCostAndUsage",
+                    "ce:GetCostForecast",
+                    "ce:GetUsageForecast",
+                    "ce:GetDimensionValues",
+                    "ce:GetTags",
+                    "ce:GetCostCategories",
+                    "ce:ListCostCategoryDefinitions",
+                    "ce:GetAnomalies",
+                    "ce:GetAnomalyMonitors",
+                    "ce:GetAnomalySubscriptions",
+                    "ce:GetReservationCoverage",
+                    "ce:GetReservationUtilization",
+                    "ce:GetSavingsPlansCoverage",
+                    "ce:GetSavingsPlansUtilization",
+                    "ce:GetSavingsPlansUtilizationDetails",
+                    "budgets:ViewBudget",
+                    "budgets:DescribeBudgets",
+                    "freetier:GetFreeTierUsage",
+                    "cost-optimization-hub:GetRecommendation",
+                    "cost-optimization-hub:ListRecommendations",
+                    "sts:GetCallerIdentity",
+                ],
+                ["*"],
+            ),
         ]:
             self.mcp_runtime_role.add_to_policy(
                 iam.PolicyStatement(actions=_actions, resources=_resources)
@@ -419,6 +463,17 @@ class AgoraStack(cdk.Stack):
                     "bedrock-agentcore:BatchCreateMemoryRecords",
                     "bedrock-agentcore:GetMemory",
                     "bedrock-agentcore:ListMemoryRecords",
+                ],
+                ["*"],
+            ),
+            (
+                [
+                    "xray:PutTraceSegments",
+                    "xray:PutSpans",
+                    "xray:PutSpansForIndexing",
+                    "xray:GetSamplingRules",
+                    "xray:GetSamplingTargets",
+                    "xray:GetSamplingStatisticSummaries",
                 ],
                 ["*"],
             ),
@@ -568,7 +623,10 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         agent_images: dict[str, ecr_assets.DockerImageAsset] = {}
 
-        for _name in ["stackoverflow", "github-issues", "wikipedia", "aws-docs", "cloudwatch"]:
+        _mcp_names = [
+            "stackoverflow", "github-issues", "wikipedia", "aws-docs", "cloudwatch", "cost-explorer"
+        ]
+        for _name in _mcp_names:
             _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
             agent_images[_name] = ecr_assets.DockerImageAsset(
                 self,

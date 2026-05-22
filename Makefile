@@ -9,11 +9,14 @@
 #
 # デモ制御 (V2):
 # make demo-start                 — EventBridge Scheduler 有効化 (トラフィック開始)
-# make demo-inject                — FIS 実験開始 (障害注入) ※ task #15 で実装予定
+# make demo-inject                — FIS 実験開始 (障害注入)
 # make demo-stop                  — Scheduler 無効化 + 実行中 FIS 実験を強制終了
+#
+# Observability セットアップ (V3, アカウントごとに1回):
+# make obs-setup                  — CloudWatch Transaction Search 有効化 (X-Ray → CloudWatch)
 
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-start demo-inject demo-stop
+        demo-start demo-inject demo-stop obs-setup
 
 test:
 	@failed=0; \
@@ -70,6 +73,24 @@ gen-specs:
 	from app.main import app as a; json.dump(a.openapi(), open('infrastructure/specs/asset-service.json','w'), indent=2)
 	print("Specs generated in infrastructure/specs/")
 	EOF
+
+# ─── V3 Observability セットアップ (アカウントごとに1回実行) ─────────────────
+
+obs-setup:
+	@echo "==> Enabling CloudWatch Transaction Search (one-time per account)..."
+	@ACCOUNT_ID=$$(aws sts get-caller-identity --query Account --output text); \
+	aws logs put-resource-policy \
+	  --region $(_REGION) \
+	  --policy-name AgoraXRayCloudWatchPolicy \
+	  --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"TransactionSearchXRayAccess\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"xray.amazonaws.com\"},\"Action\":\"logs:PutLogEvents\",\"Resource\":[\"arn:aws:logs:$(_REGION):$$ACCOUNT_ID:log-group:aws/spans:*\",\"arn:aws:logs:$(_REGION):$$ACCOUNT_ID:log-group:/aws/application-signals/data:*\"],\"Condition\":{\"ArnLike\":{\"aws:SourceArn\":\"arn:aws:xray:$(_REGION):$$ACCOUNT_ID:*\"},\"StringEquals\":{\"aws:SourceAccount\":\"$$ACCOUNT_ID\"}}}]}" > /dev/null 2>&1 || true
+	@aws xray update-trace-segment-destination \
+	  --region $(_REGION) \
+	  --destination CloudWatchLogs > /dev/null 2>&1 || true
+	@aws xray update-indexing-rule \
+	  --region $(_REGION) \
+	  --name "Default" \
+	  --rule '{"Probabilistic":{"DesiredSamplingPercentage":100}}' > /dev/null 2>&1 || true
+	@echo "==> Done. CloudWatch GenAI Observability dashboard: https://console.aws.amazon.com/cloudwatch/home#gen-ai-observability"
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
 
