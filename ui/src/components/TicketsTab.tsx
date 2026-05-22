@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, AlertCircle, Inbox } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ja } from "date-fns/locale";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -43,7 +45,7 @@ function TimelineStep({
 }: {
   label: string;
   time?: string;
-  content?: string;
+  content?: React.ReactNode;
   variant: TimelineVariant;
   isLast: boolean;
 }) {
@@ -66,17 +68,15 @@ function TimelineStep({
             <span className="text-[10px] text-muted-foreground">{time}</span>
           )}
         </div>
-        {content && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-            {content}
-          </p>
-        )}
+        {content && <div className="mt-0.5">{content}</div>}
       </div>
     </div>
   );
 }
 
 function TicketCard({ ticket }: { ticket: Ticket }) {
+  const [expanded, setExpanded] = useState(false);
+
   const createdAgo = formatDistanceToNow(new Date(ticket.created_at), {
     addSuffix: true,
     locale: ja,
@@ -96,6 +96,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
     ticket.status
   );
   const isResolved = ["resolved", "closed"].includes(ticket.status);
+  const hasResolution = isResolved && !!ticket.resolution;
 
   return (
     <Card className="transition-shadow hover:shadow-md">
@@ -121,7 +122,11 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
         <TimelineStep
           label="起票"
           time={createdAgo}
-          content={ticket.description}
+          content={
+            <p className={cn("text-xs text-muted-foreground", !expanded && "line-clamp-2")}>
+              {ticket.description}
+            </p>
+          }
           variant="open"
           isLast={!isInvestigating}
         />
@@ -137,10 +142,43 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
           <TimelineStep
             label="解決"
             time={resolvedAgo ?? updatedAgo}
-            content={ticket.resolution}
+            content={
+              hasResolution ? (
+                <div className="relative overflow-hidden">
+                  <div
+                    className={cn(
+                      "overflow-hidden transition-all",
+                      !expanded && "max-h-24"
+                    )}
+                  >
+                    <div className="prose prose-sm max-w-none
+                      prose-p:my-0.5 prose-p:text-xs prose-p:leading-relaxed
+                      prose-headings:text-xs prose-headings:font-semibold prose-headings:mt-2 prose-headings:mb-0.5
+                      prose-ul:my-0.5 prose-ol:my-0.5 prose-li:my-0 prose-li:text-xs
+                      prose-strong:font-semibold prose-strong:text-xs
+                      prose-code:text-[10px] prose-code:rounded prose-code:px-0.5">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {ticket.resolution!}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                  {!expanded && (
+                    <div className="absolute bottom-0 inset-x-0 h-8 bg-gradient-to-t from-card to-transparent" />
+                  )}
+                </div>
+              ) : undefined
+            }
             variant="resolved"
             isLast
           />
+        )}
+        {hasResolution && (
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {expanded ? "↑ 折りたたむ" : "↓ 詳細を見る"}
+          </button>
         )}
       </CardContent>
     </Card>

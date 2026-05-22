@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, AlertCircle, BookOpen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ja } from "date-fns/locale";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,7 +42,7 @@ function KnowledgeCard({ ticket }: { ticket: Ticket }) {
           <CardTitle className="text-sm font-medium leading-snug">
             {ticket.title}
           </CardTitle>
-          <Badge variant={categoryVariant(ticket.category)}>
+          <Badge variant={categoryVariant(ticket.category as Category)}>
             {ticket.category}
           </Badge>
         </div>
@@ -48,15 +50,21 @@ function KnowledgeCard({ ticket }: { ticket: Ticket }) {
           #{ticket.ticket_id.slice(0, 8)} · {ago}に解決
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="line-clamp-2 text-sm text-muted-foreground">
-          {ticket.description}
-        </p>
-        {ticket.resolution && (
-          <div className="rounded-md border border-green-200 bg-green-50 p-3">
-            <p className="mb-1 text-xs font-semibold text-green-700">解決策</p>
-            <p className="text-sm text-green-800">{ticket.resolution}</p>
+      <CardContent>
+        {ticket.resolution ? (
+          <div className="prose prose-sm max-w-none
+            prose-p:my-1 prose-p:leading-relaxed
+            prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 first:prose-headings:mt-0
+            prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
+            prose-strong:font-semibold
+            prose-code:text-xs prose-code:rounded prose-code:px-0.5
+            prose-pre:text-xs prose-pre:my-1">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {ticket.resolution}
+            </ReactMarkdown>
           </div>
+        ) : (
+          <p className="text-xs italic text-muted-foreground">解決策が記録されていません</p>
         )}
       </CardContent>
     </Card>
@@ -75,8 +83,8 @@ function KnowledgeSkeleton() {
       </CardHeader>
       <CardContent className="space-y-2">
         <Skeleton className="h-3 w-full" />
-        <Skeleton className="mt-1 h-3 w-4/5" />
-        <Skeleton className="mt-2 h-12 w-full" />
+        <Skeleton className="h-3 w-4/5" />
+        <Skeleton className="mt-2 h-20 w-full" />
       </CardContent>
     </Card>
   );
@@ -92,7 +100,6 @@ export default function KnowledgeTab() {
     setLoading(true);
     setError(null);
     try {
-      // Knowledge = resolved tickets
       const data = await listTickets({
         status: "resolved",
         category: categoryFilter !== "all" ? categoryFilter : undefined,
@@ -161,8 +168,8 @@ export default function KnowledgeTab() {
       {/* List */}
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
               <KnowledgeSkeleton key={i} />
             ))}
           </div>
@@ -173,7 +180,7 @@ export default function KnowledgeTab() {
             <p className="text-xs">Chat タブでインシデントを報告すると、解決後にここに蓄積されます。</p>
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-2">
             {tickets.map((t) => (
               <KnowledgeCard key={t.ticket_id} ticket={t} />
             ))}
