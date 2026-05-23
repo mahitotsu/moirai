@@ -26,7 +26,7 @@
   - [x] 7b. Diagnosis Agent
   - [x] 7c. Resolution Agent
 - [x] 8. Gateway Agent 実装・デプロイ (AG-UI protocol)
-- [x] 9. AgentCore Memory 設定
+- [x] 9. AgentCore Memory 設定 ※後にスコープ外へ除外 (コスト対効果低・デモ価値薄) → CDK/agent.py から削除済み
 - [x] 10. React UI 実装
   - [x] 10a. Chat タブ (AG-UI / SSE)
   - [x] 10b. Tickets タブ (REST API直接)
@@ -77,16 +77,8 @@
   - `services/reports-service/` 作成: FastAPI (GET/POST /reports)、`agora-reports` DynamoDB テーブル追加
   - Gateway Agent に `run_analysis` ツール追加・system_prompt 更新
   - CDK: agora-reports テーブル / ReportsServiceFn / AgoraAnalysisRuntime / CloudFront `/api/reports*` / CatalogVersion→5
-- [x] 23. AgentCore Evaluations 設定
-  - `agora-evaluation-execution-role` IAM ロール追加 (bedrock-agentcore trust + InvokeModel + CW Logs) — CDK管理
-  - `scripts/eval_setup.py` + `make eval-setup` 追加 — 4エージェント分の OnlineEvaluationConfig を作成
-  - **制約**: OnlineEvaluationConfig は X-Ray トレース (aws/spans) 初期化後でないと作成不可のため CDK から除外
-    → エージェント初回呼び出し後に `make eval-setup` を実行すること
-  - 対象評価: Gateway(HELPFULNESS/FAITHFULNESS), Triage(TOOL_SELECTION_ACCURACY), Diagnosis(CORRECTNESS), Resolution(FAITHFULNESS)
-  - **⚠️ 既知の問題 (2026-05-24)**: `make eval-setup` が "One or more specified log groups do not exist" で失敗する
-    - `eval_setup.py` のログループ名を `agora_gateway_ep` → `DEFAULT` に修正済み（ログは DEFAULT エンドポイントに流れるため）
-    - スパンは生成・計装されているが (EMF `otel.sdk.span.started` で確認) ADOT コレクター → X-Ray への転送がサイレント失敗
-    - AgentCore ランタイム内 ADOT コレクターの設定問題と推定。解決まで eval-setup は保留
+- [x] 23. AgentCore Evaluations 設定 ※スコープ外へ除外 → CDK/Makefile/scripts/eval_setup.py から削除済み
+  - ADOT→X-Ray転送のサイレント失敗により OnlineEvaluationConfig が作成不可のまま解決の目処が立たないためデモスコープから除外
 - [x] 24. React UI Reports タブ追加
 
 ## V4: 進化する

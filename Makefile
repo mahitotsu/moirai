@@ -20,12 +20,9 @@ _MONITORING_STACK := FaultInjectionStack
 #
 # Observability セットアップ (V3, アカウントごとに1回・冪等):
 # make obs-setup                  — CloudWatch Transaction Search 有効化 (X-Ray → CloudWatch)
-#
-# Evaluations セットアップ (V3, エージェント初回呼び出し後・冪等):
-# make eval-setup                 — obs-setup を実行してから OnlineEvaluationConfig を作成
 
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-start demo-inject demo-stop obs-setup eval-setup
+        demo-start demo-inject demo-stop obs-setup
 
 test:
 	@failed=0; \
@@ -151,11 +148,3 @@ demo-stop:
 	done
 	@echo "==> Done. All traffic stopped."
 
-# ─── V3 評価設定 ──────────────────────────────────────────────────────────────
-# OnlineEvaluationConfig は bedrock-agentcore 内部レジストリの初期化に
-# X-Ray トレース (aws/spans) が必要なため、CDK デプロイ後・エージェント初回呼び出し後に実行する。
-
-eval-setup: obs-setup
-	@echo "==> Creating OnlineEvaluationConfig for all agents..."
-	@uv run python scripts/eval_setup.py
-	@echo "==> Done. Check AWS Console → Bedrock AgentCore → Evaluations."

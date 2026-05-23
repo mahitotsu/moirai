@@ -81,7 +81,6 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 _GUARDRAIL_VERSION = "DRAFT"
 _CATALOG_VERSION = "5"
 _API_KEY_LENGTH = 32
-_MEMORY_EXPIRY_DAYS = 7
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
 _TICKETS_STATUS_INDEX = "status-created_at-index"
@@ -556,15 +555,6 @@ class AgoraStack(cdk.Stack):
             ),
             (
                 [
-                    "bedrock-agentcore:RetrieveMemoryRecords",
-                    "bedrock-agentcore:BatchCreateMemoryRecords",
-                    "bedrock-agentcore:GetMemory",
-                    "bedrock-agentcore:ListMemoryRecords",
-                ],
-                ["*"],
-            ),
-            (
-                [
                     "xray:PutTraceSegments",
                     "xray:PutSpans",
                     "xray:PutSpansForIndexing",
@@ -667,31 +657,6 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        # AgentCore Memory 実行ロール
-        self.memory_execution_role = iam.Role(
-            self,
-            "MemoryExecutionRole",
-            role_name="agora-memory-execution-role",
-            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-        )
-        self.memory_execution_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
-                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
-                    "arn:aws:bedrock:*::foundation-model/*",
-                    "arn:aws:bedrock:*::inference-profile/*",
-                ],
-            )
-        )
-        self.memory_execution_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-                resources=["*"],
-            )
-        )
-
         # =====================================================================
         # BEDROCK GUARDRAIL — Gateway Agent 用
         # =====================================================================
@@ -731,33 +696,6 @@ class AgoraStack(cdk.Stack):
                 ]
             ),
             tags=[cdk.CfnTag(key="project", value="agora")],
-        )
-
-        # =====================================================================
-        # AGENTCORE MEMORY
-        # =====================================================================
-        self.memory = agentcore.CfnMemory(
-            self,
-            "AgoraMemory",
-            name="agora_memory",
-            description="Conversation context and user preference memory for Agora IT Service Desk",
-            event_expiry_duration=_MEMORY_EXPIRY_DAYS,
-            memory_execution_role_arn=self.memory_execution_role.role_arn,
-            memory_strategies=[
-                agentcore.CfnMemory.MemoryStrategyProperty(
-                    summary_memory_strategy=agentcore.CfnMemory.SummaryMemoryStrategyProperty(
-                        name="agora_summary",
-                        description="IT incident conversation history and context per user",
-                    ),
-                ),
-                agentcore.CfnMemory.MemoryStrategyProperty(
-                    user_preference_memory_strategy=agentcore.CfnMemory.UserPreferenceMemoryStrategyProperty(
-                        name="agora_user_preferences",
-                        description="User-specific technical background and preferences",
-                    ),
-                ),
-            ],
-            tags={"project": "agora"},
         )
 
         # =====================================================================
@@ -817,7 +755,6 @@ class AgoraStack(cdk.Stack):
             protocol_configuration="HTTP",
             environment_variables={
                 "MODEL_ID": _MODEL_SONNET,
-                "MEMORY_ID": self.memory.attr_memory_id,
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
                 "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
             },
@@ -1492,57 +1429,6 @@ class AgoraStack(cdk.Stack):
                 _cfn_policy.node.add_dependency(_gw_target)
 
         # =====================================================================
-        # AGENTCORE EVALUATIONS — Online 評価設定 (V3)
-        # =====================================================================
-        eval_execution_role = iam.Role(
-            self,
-            "EvaluationExecutionRole",
-            role_name="agora-evaluation-execution-role",
-            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
-        )
-        eval_execution_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-                resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
-                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
-                    "arn:aws:bedrock:*::foundation-model/*",
-                ],
-            )
-        )
-        eval_execution_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "logs:FilterLogEvents",
-                    "logs:GetLogEvents",
-                    "logs:DescribeLogGroups",
-                    "logs:DescribeLogStreams",
-                    "logs:StartQuery",
-                    "logs:GetQueryResults",
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents",
-                ],
-                resources=["*"],
-            )
-        )
-        eval_execution_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "bedrock-agentcore:GetAgentRuntime",
-                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
-                    "bedrock-agentcore:ListAgentRuntimes",
-                    "bedrock-agentcore:ListAgentRuntimeEndpoints",
-                ],
-                resources=["*"],
-            )
-        )
-
-        # OnlineEvaluationConfig は bedrock-agentcore 内部レジストリの初期化に
-        # X-Ray トレース (aws/spans) の存在が必要なため、CDK デプロイ時点では作成不可。
-        # エージェント初回呼び出し後に make eval-setup で作成する。
-
-        # =====================================================================
         # REGISTRY CATALOG — Lambda-backed Custom Resource
         # =====================================================================
         import aws_cdk.custom_resources as cr
@@ -1642,6 +1528,5 @@ class AgoraStack(cdk.Stack):
             "GatewayRuntimeArn",
             value=self.gateway_agent_runtime.attr_agent_runtime_arn,
         )
-        cdk.CfnOutput(self, "MemoryId", value=self.memory.attr_memory_id)
         cdk.CfnOutput(self, "PolicyEngineArn", value=self.policy_engine.attr_policy_engine_arn)
         cdk.CfnOutput(self, "GuardrailId", value=self.guardrail.attr_guardrail_id)

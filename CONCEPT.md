@@ -214,9 +214,9 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 | Runtime (MCP) | Community/Observability MCPサーバー | 外部知識源をツールとして統一的に扱う |
 | Gateway | 内部サービスをMCPツール化 | 既存REST APIを変更せずエージェントから利用可能にする |
 | Registry | capabilityベースの動的発見 | エージェントがサービスのエンドポイントをハードコードしない |
-| Memory | 会話文脈・ユーザー傾向の記憶 | セッション継続性と個人化。業務データとは明確に分離 |
+| Memory | (スコープ外) | デモシナリオに対してコスト対効果が低いため除外 |
 | Policy (V2) | エージェント間のツールアクセスをCedarポリシーで制御 | 責務分割をコードではなくインフラレベルで強制。Triage/Diagnosis は読み取り専用、Resolution のみ書き込み許可 |
-| Evaluations (V3) | 解決提案の品質をLLM-as-a-Judgeで評価 | 主観的な品質を定量化し継続的改善の指標にする |
+| Evaluations | (スコープ外) | ADOT→X-Ray転送のサイレント失敗により動作不可のため除外 |
 | Observability (V3) | OTELによるエンドツーエンドトレーシング | Bridge Lambda → エージェント間の処理フローをCloudWatchで可視化 |
 
 ## Bedrock 機能マッピング
@@ -340,7 +340,6 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 - AgentCore Registry
 - A2Aエージェント群（Gateway / Triage / Diagnosis / Resolution）
 - AG-UI + React UI（Chat / Tickets / Knowledge タブ）
-- AgentCore Memory
 
 **V2: 自動化する**
 - 監視対象システム（fake-api-server: EC2 DescribeInstances を定期呼び出し）
