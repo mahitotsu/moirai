@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 — 進化する  
-**次のタスク**: #29 Ticket 履歴追跡実装
+**次のタスク**: #30 `lesson_learned` フィールド実装
 
 ---
 
@@ -91,7 +91,7 @@
 - [x] 26. Lambda (stream consumer) 実装 (ticket-dispatcher が INSERT イベントを処理 — V2 時点で完了済み)
 - [x] 27. V4 stream consumer Lambda 実装 (MODIFY イベント専用: ticket resolved → 知識結晶化)
 - [x] 28. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
-- [ ] 29. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
+- [x] 29. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
 - [ ] 30. `lesson_learned` フィールド実装 (Resolution Agent が close 時に1文の教訓を書き込む。Knowledge タブはこのフィールドを `resolution` の代わりに主表示に使用)
 - [ ] 31. Gateway Agent system_prompt 改訂 (Chat の役割を「チケット×Knowledge 横断クエリ」と「Guardrails 実演」に絞る。横断クエリを得意とする旨を明示し、Analysis Agent 起動などボタン代替可能な指示は受け付けない旨を追記)
 
