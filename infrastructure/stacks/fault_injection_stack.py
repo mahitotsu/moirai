@@ -232,16 +232,7 @@ class FaultInjectionStack(cdk.Stack):
             function_name="agora-bridge",
             code=lambda_.Code.from_asset(
                 str(_SERVICES_DIR / "bridge"),
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    platform="linux/arm64",
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output"
-                        " && cp lambda_function.py /asset-output/",
-                    ],
-                ),
+                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
             ),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
