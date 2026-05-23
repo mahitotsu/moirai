@@ -38,6 +38,7 @@ def test_table(dynamodb_client):
         BillingMode="PAY_PER_REQUEST",
     )
     waiter = dynamodb_client.get_waiter("table_exists")
+    waiter.config.delay = 2  # デフォルト20秒→2秒ポーリングに短縮
     waiter.wait(TableName=TABLE_NAME)
     yield
     dynamodb_client.delete_table(TableName=TABLE_NAME)
