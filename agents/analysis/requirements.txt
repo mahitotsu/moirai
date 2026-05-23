@@ -466,7 +466,9 @@ pydantic==2.13.4
 pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.1
-    # via mcp
+    # via
+    #   analysis
+    #   mcp
 pyjwt==2.12.1
     # via mcp
 pymysql==1.1.3

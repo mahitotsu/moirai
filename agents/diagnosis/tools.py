@@ -5,22 +5,24 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
 import httpx
-from boto3.dynamodb.conditions import Key
 from pydantic_settings import BaseSettings
 from strands import tool
 
 _STACK_API_BASE = "https://api.stackexchange.com/2.3"
 _GITHUB_API_BASE = "https://api.github.com"
 _WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
-_TICKETS_TABLE = "agora-tickets"
-_REGION = "us-east-1"
 
 
 class _Settings(BaseSettings):
     github_token: str = ""
+    tickets_table: str = "agora-tickets"
+    aws_region: str = "us-east-1"
 
 
-_github_token = _Settings().github_token
+_settings = _Settings()
+_github_token = _settings.github_token
+_dynamodb = boto3.client("dynamodb", region_name=_settings.aws_region)
+_cloudwatch = boto3.client("cloudwatch", region_name=_settings.aws_region)
 
 
 def _stackoverflow(query: str, tags: list[str] | None = None, num_results: int = 5) -> str:
@@ -151,8 +153,7 @@ def check_cloudwatch_alarms() -> str:
         Active CloudWatch alarms with details, or a message if none are found.
     """
     try:
-        cw = boto3.client("cloudwatch", region_name=_REGION)
-        resp = cw.describe_alarms(StateValue="ALARM", MaxRecords=50)
+        resp = _cloudwatch.describe_alarms(StateValue="ALARM", MaxRecords=50)
         alarms = resp.get("MetricAlarms", [])
         if not alarms:
             return "=== CloudWatch Active Alarms ===\nNo active alarms found."
@@ -182,15 +183,17 @@ def search_past_tickets(query: str, limit: int = 5) -> str:
         List of matching past tickets with their descriptions and resolutions.
     """
     try:
-        dynamodb = boto3.resource("dynamodb", region_name=_REGION)
-        table = dynamodb.Table(_TICKETS_TABLE)
-        resp = table.query(
+        resp = _dynamodb.query(
+            TableName=_settings.tickets_table,
             IndexName="status-created_at-index",
-            KeyConditionExpression=Key("status").eq("resolved"),
+            KeyConditionExpression="#s = :resolved",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":resolved": {"S": "resolved"}},
             Limit=limit,
             ScanIndexForward=False,
         )
-        tickets = resp.get("Items", [])
+        raw_items = resp.get("Items", [])
+        tickets = [{k: list(v.values())[0] for k, v in item.items()} for item in raw_items]
     except Exception as exc:
         return f"Ticket search failed: {exc}"
     if not tickets:

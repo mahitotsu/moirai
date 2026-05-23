@@ -38,7 +38,7 @@ def _streams_event(
     }
 
 
-def test_insert_triggers_agent_with_ticket_fields():
+def test_insert_triggers_agent_with_ticket_fields() -> None:
     with patch.object(lambda_function, "_invoke_gateway_agent") as mock:
         lambda_function.handler(
             _streams_event(
@@ -57,20 +57,20 @@ def test_insert_triggers_agent_with_ticket_fields():
     )
 
 
-def test_modify_is_ignored():
+def test_modify_is_ignored() -> None:
     """MODIFY イベントは V4 の stream consumer が担う設計のため dispatcher は無視する。"""
     with patch.object(lambda_function, "_invoke_gateway_agent") as mock:
         lambda_function.handler(_streams_event("MODIFY"), None)
     mock.assert_not_called()
 
 
-def test_remove_is_ignored():
+def test_remove_is_ignored() -> None:
     with patch.object(lambda_function, "_invoke_gateway_agent") as mock:
         lambda_function.handler(_streams_event("REMOVE"), None)
     mock.assert_not_called()
 
 
-def test_agent_not_called_when_arn_unset():
+def test_agent_not_called_when_arn_unset() -> None:
     """AGENT_RUNTIME_ARN 未設定時はエラーを起こさずスキップする (初回デプロイ想定)。"""
     with (
         patch.object(lambda_function, "_AGENT_RUNTIME_ARN", ""),
@@ -80,7 +80,7 @@ def test_agent_not_called_when_arn_unset():
     mock_agentcore.invoke_agent_runtime.assert_not_called()
 
 
-def test_invoke_gateway_agent_builds_prompt_with_ticket_info():
+def test_invoke_gateway_agent_builds_prompt_with_ticket_info() -> None:
     """診断依頼プロンプトにチケットID・タイトル・重要度・概要がすべて含まれる。"""
     captured: list[dict] = []
 

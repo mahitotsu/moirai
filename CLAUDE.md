@@ -93,16 +93,32 @@ agents/{name}/
 ├── agent.py           # Bedrock Converse API ループ
 ├── system_prompt.md   # System Prompt（独立ファイルで管理）
 ├── tools.py           # ツール定義（AgentCore Registry経由で動的解決）
+├── tests/             # ユニットテスト（必須）
 └── pyproject.toml
 ```
 - System Promptは `system_prompt.md` として独立管理
 - MCPエンドポイントのハードコード禁止。AgentCore Registryで動的解決
+- **Strands `@tool` 関数のパターン**: コンストラクタDIができないため、モジュールレベルの `_Settings`（pydantic-settings）と boto3 クライアントを使う。テストでは `unittest.mock.patch.object(tools, "_dynamodb")` 等でクライアントをモックする
+- テーブル名・リージョンは必ず `pydantic-settings` の `_Settings` クラスで管理し、CDK の `environment_variables` から注入する
+
+### テスト必須ルール
+
+新規コンポーネントを追加する際は **必ずテストを同時に作成**する。
+
+| コンポーネント | テスト場所 | テスト方式 |
+|---|---|---|
+| FastAPIサービス | `services/{name}/tests/` | 実DynamoDB（`agora-test-*` テーブル）|
+| FastMCPサーバー | `mcp-servers/{name}/tests/` | 実外部APIまたはモック |
+| Strandsエージェント tools.py | `agents/{name}/tests/` | `unittest.mock.patch.object` |
+
+コンポーネント追加後、`make test` がパスすることを確認してからコミットする。
 
 ### 禁止事項
 - AWSクレデンシャルのハードコード（IAMロールで解決）
 - MCPサーバー・AgentCoreエンドポイントのハードコード（Registry経由で解決）
 - `agora-test-` プレフィックスのテーブルへの本番データ混入
 - `from __future__ import annotations` の省略
+- 新規コンポーネントでのテーブル名・リージョン等のハードコード（pydantic-settings + CDK env var注入で解決）
 
 ## Dockerビルド規約
 

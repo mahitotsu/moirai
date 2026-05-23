@@ -29,7 +29,7 @@ def _sqs_event(alarm_name: str, reason: str = "Threshold crossed") -> dict:
     return {"Records": [{"body": json.dumps(eb_event)}]}
 
 
-def test_handler_extracts_alarm_name_and_reason():
+def test_handler_extracts_alarm_name_and_reason() -> None:
     with patch.object(lambda_function, "_create_ticket", return_value="t-1") as mock:
         lambda_function.handler(
             _sqs_event("agora-fake-api-error-rate", "2 datapoints breached"), None
@@ -37,7 +37,7 @@ def test_handler_extracts_alarm_name_and_reason():
     mock.assert_called_once_with("agora-fake-api-error-rate", "2 datapoints breached")
 
 
-def test_handler_defaults_when_alarm_name_missing():
+def test_handler_defaults_when_alarm_name_missing() -> None:
     """alarmName が欠落した不正イベントでクラッシュせず 'Unknown' にフォールバックする。"""
     event = {
         "Records": [{"body": json.dumps({"detail": {"state": {"value": "ALARM", "reason": ""}}})}]
@@ -47,7 +47,7 @@ def test_handler_defaults_when_alarm_name_missing():
     mock.assert_called_once_with("Unknown", "")
 
 
-def test_create_ticket_title_follows_convention():
+def test_create_ticket_title_follows_convention() -> None:
     """タイトルは 'CloudWatch ALARM: {alarm_name}' 形式でなければならない。
     ticket-dispatcher や Gateway Agent がタイトルを解析してアラーム源を識別するため。
     """
@@ -75,7 +75,7 @@ def test_create_ticket_title_follows_convention():
     assert "agora-fake-api-error-rate" in payload["description"]
 
 
-def test_create_ticket_includes_reason_in_description():
+def test_create_ticket_includes_reason_in_description() -> None:
     captured: list[dict] = []
 
     def fake_urlopen(req, timeout):

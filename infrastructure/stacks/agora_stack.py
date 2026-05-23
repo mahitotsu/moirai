@@ -1193,6 +1193,9 @@ class AgoraStack(cdk.Stack):
             env_vars = dict(agent["env"])
             if agent["name"] in ("diagnosis", "resolution"):
                 env_vars["GATEWAY_URL"] = self.agentcore_gateway.attr_gateway_url
+            if agent["name"] == "analysis":
+                env_vars["TICKETS_TABLE"] = self.tickets_table.table_name
+                env_vars["REPORTS_TABLE"] = self.reports_table.table_name
 
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(

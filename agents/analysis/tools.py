@@ -6,11 +6,20 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
+from pydantic_settings import BaseSettings
 from strands import tool
 
-_TICKETS_TABLE = "agora-tickets"
-_REPORTS_TABLE = "agora-reports"
-_REGION = "us-east-1"
+
+class _Settings(BaseSettings):
+    tickets_table: str = "agora-tickets"
+    reports_table: str = "agora-reports"
+    aws_region: str = "us-east-1"
+
+
+_settings = _Settings()
+_dynamodb = boto3.client("dynamodb", region_name=_settings.aws_region)
+_cloudwatch = boto3.client("cloudwatch", region_name=_settings.aws_region)
+_ce = boto3.client("ce", region_name="us-east-1")
 
 
 def _now() -> str:
@@ -28,10 +37,11 @@ def get_ticket_stats() -> str:
         JSON-formatted summary of ticket counts by dimension.
     """
     try:
-        dynamodb = boto3.resource("dynamodb", region_name=_REGION)
-        table = dynamodb.Table(_TICKETS_TABLE)
-        resp = table.scan()
-        tickets: list[dict[str, Any]] = resp.get("Items", [])
+        resp = _dynamodb.scan(TableName=_settings.tickets_table)
+        raw_items: list[dict[str, Any]] = resp.get("Items", [])
+        tickets: list[dict[str, Any]] = [
+            {k: list(v.values())[0] for k, v in item.items()} for item in raw_items
+        ]
     except Exception as exc:
         return f"Ticket stats failed: {exc}"
 
@@ -84,7 +94,7 @@ def get_lambda_error_metrics(function_names: list[str], hours: int = 24) -> str:
         JSON-formatted error counts and invocation counts per function.
     """
     try:
-        cw = boto3.client("cloudwatch", region_name=_REGION)
+        cw = _cloudwatch
         end = datetime.now(UTC)
         start = end - timedelta(hours=hours)
         period = max(3600, hours * 60)
@@ -150,7 +160,7 @@ def get_bedrock_costs(days: int = 7) -> str:
     """
     days = min(days, 30)
     try:
-        ce = boto3.client("ce", region_name="us-east-1")
+        ce = _ce
         end = datetime.now(UTC).date()
         start = end - timedelta(days=days)
 
@@ -208,11 +218,10 @@ def save_report(title: str, report_type: str, summary: str, details: str) -> str
         report_type = "custom"
 
     try:
-        dynamodb = boto3.client("dynamodb", region_name=_REGION)
         report_id = str(uuid.uuid4())
         now = _now()
-        dynamodb.put_item(
-            TableName=_REPORTS_TABLE,
+        _dynamodb.put_item(
+            TableName=_settings.reports_table,
             Item={
                 "report_id": {"S": report_id},
                 "title": {"S": title},
