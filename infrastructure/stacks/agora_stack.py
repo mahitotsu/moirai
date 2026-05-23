@@ -88,6 +88,7 @@ _TICKETS_STATUS_INDEX = "status-created_at-index"
 _TICKETS_CATEGORY_INDEX = "category-created_at-index"
 _ASSETS_TYPE_INDEX = "type-name-index"
 _ASSETS_ENV_INDEX = "environment-type-index"
+_KNOWLEDGE_CATEGORY_INDEX = "category-crystallized_at-index"
 
 
 class _Settings(BaseSettings):
@@ -270,6 +271,26 @@ class AgoraStack(cdk.Stack):
             ),
             sort_key=dynamodb.Attribute(
                 name="type", type=dynamodb.AttributeType.STRING
+            ),
+        )
+
+        self.knowledge_table = dynamodb.Table(
+            self,
+            "KnowledgeTable",
+            table_name="agora-knowledge",
+            partition_key=dynamodb.Attribute(
+                name="knowledge_id", type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+        self.knowledge_table.add_global_secondary_index(
+            index_name=_KNOWLEDGE_CATEGORY_INDEX,
+            partition_key=dynamodb.Attribute(
+                name="category", type=dynamodb.AttributeType.STRING
+            ),
+            sort_key=dynamodb.Attribute(
+                name="crystallized_at", type=dynamodb.AttributeType.STRING
             ),
         )
 
@@ -1010,6 +1031,90 @@ class AgoraStack(cdk.Stack):
             filters=[
                 lambda_.FilterCriteria.filter(
                     {"eventName": lambda_.FilterRule.is_equal("INSERT")}
+                )
+            ],
+        )
+
+        # knowledge-consumer — DynamoDB Streams MODIFY consumer (V4)
+        _knowledge_consumer_role = iam.Role(
+            self,
+            "KnowledgeConsumerRole",
+            role_name="agora-knowledge-consumer-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                _basic_exec,
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSLambdaDynamoDBExecutionRole"
+                ),
+            ],
+        )
+        _knowledge_consumer_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["dynamodb:PutItem"],
+                resources=[self.knowledge_table.table_arn],
+            )
+        )
+
+        _knowledge_consumer_dlq = sqs.Queue(
+            self,
+            "KnowledgeConsumerDlq",
+            queue_name="agora-knowledge-consumer-dlq",
+            retention_period=_DLQ_RETENTION,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+        _knowledge_consumer_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["sqs:SendMessage"],
+                resources=[_knowledge_consumer_dlq.queue_arn],
+            )
+        )
+
+        self.knowledge_consumer_fn = lambda_.Function(
+            self,
+            "KnowledgeConsumerFn",
+            function_name="agora-knowledge-consumer",
+            code=lambda_.Code.from_asset(
+                str(_SERVICES_DIR / "knowledge-consumer"),
+                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
+            ),
+            handler="lambda_function.handler",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            architecture=lambda_.Architecture.ARM_64,
+            memory_size=_MEMORY_WORKER_MB,
+            timeout=_TIMEOUT_LONG,
+            role=_knowledge_consumer_role,
+            log_group=logs.LogGroup(
+                self,
+                "KnowledgeConsumerFnLogs",
+                log_group_name="/aws/lambda/agora-knowledge-consumer",
+                retention=_LOG_RETENTION,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
+            environment={
+                "KNOWLEDGE_TABLE_NAME": self.knowledge_table.table_name,
+            },
+        )
+        lambda_.EventSourceMapping(
+            self,
+            "KnowledgeConsumerEventSource",
+            target=self.knowledge_consumer_fn,
+            event_source_arn=self.tickets_table.table_stream_arn,
+            starting_position=lambda_.StartingPosition.LATEST,
+            batch_size=_DYNAMO_BATCH_SIZE,
+            bisect_batch_on_error=True,
+            retry_attempts=_DYNAMO_RETRY_ATTEMPTS,
+            report_batch_item_failures=True,
+            on_failure=event_sources.SqsDlq(_knowledge_consumer_dlq),
+            filters=[
+                lambda_.FilterCriteria.filter(
+                    {
+                        "eventName": lambda_.FilterRule.is_equal("MODIFY"),
+                        "dynamodb": {
+                            "NewImage": {
+                                "status": {"S": lambda_.FilterRule.is_equal("resolved")}
+                            }
+                        },
+                    }
                 )
             ],
         )

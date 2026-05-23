@@ -20,7 +20,7 @@ def template() -> Template:
 # ---------------------------------------------------------------------------
 
 def test_dynamodb_tables_exist(template: Template) -> None:
-    for table_name in ("agora-tickets", "agora-assets", "agora-reports"):
+    for table_name in ("agora-tickets", "agora-assets", "agora-reports", "agora-knowledge"):
         template.has_resource_properties(
             "AWS::DynamoDB::Table",
             {"TableName": table_name, "BillingMode": "PAY_PER_REQUEST"},
@@ -52,6 +52,23 @@ def test_ticket_dispatcher_config(template: Template) -> None:
             "Environment": {
                 "Variables": {
                     "AGENT_RUNTIME_ARN": Match.any_value(),
+                }
+            },
+        },
+    )
+
+
+def test_knowledge_consumer_config(template: Template) -> None:
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "FunctionName": "agora-knowledge-consumer",
+            "Architectures": ["arm64"],
+            "Handler": "lambda_function.handler",
+            "Runtime": "python3.12",
+            "Environment": {
+                "Variables": {
+                    "KNOWLEDGE_TABLE_NAME": Match.any_value(),
                 }
             },
         },
@@ -90,10 +107,10 @@ def test_lambda_function_count(template: Template) -> None:
         "AWS::Lambda::Function",
         props=Match.object_like({}),
     )
-    # サービス4 + chat-proxy + ticket-dispatcher + registry-catalog +
+    # サービス4 + chat-proxy + ticket-dispatcher + knowledge-consumer + registry-catalog +
     # BucketDeployment内部Lambda群 (Custom::CDKBucketDeployment) を除いた数
     named_fns = [
         r for r in resources.values()
         if r.get("Properties", {}).get("FunctionName", "").startswith("agora-")
     ]
-    assert len(named_fns) == 6, f"agora- Lambda 数が変わっています: {len(named_fns)}"
+    assert len(named_fns) == 7, f"agora- Lambda 数が変わっています: {len(named_fns)}"
