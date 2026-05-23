@@ -1147,7 +1147,10 @@ class AgoraStack(cdk.Stack):
         )
 
         ui_origin = origins.S3BucketOrigin.with_origin_access_control(self.ui_bucket)
-        chat_origin = origins.FunctionUrlOrigin.with_origin_access_control(self.chat_proxy_url)
+        chat_origin = origins.FunctionUrlOrigin.with_origin_access_control(
+            self.chat_proxy_url,
+            read_timeout=cdk.Duration.seconds(60),
+        )
         ticket_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.ticket_url.url))
         reports_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.reports_url.url))
         reports_origin = origins.HttpOrigin(
@@ -1223,6 +1226,17 @@ class AgoraStack(cdk.Stack):
                     response_page_path="/index.html",
                 ),
             ],
+        )
+
+        # FunctionUrlOrigin.with_origin_access_control does NOT automatically grant
+        # lambda:InvokeFunctionUrl to CloudFront in CDK 2.x. Without this explicit
+        # permission the Lambda returns 403, which CloudFront converts to 200+index.html,
+        # causing the chat UI to see a JSON parse error instead of a proper response.
+        self.chat_proxy_fn.add_permission(
+            "AllowCloudFrontOac",
+            principal=iam.ServicePrincipal("cloudfront.amazonaws.com"),
+            action="lambda:InvokeFunctionUrl",
+            source_arn=self.ui_distribution.distribution_arn,
         )
 
         BucketDeployment(

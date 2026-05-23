@@ -88,7 +88,8 @@ class TicketRepository:
         return _to_ticket(item) if item else None
 
     def update(self, ticket_id: str, data: TicketUpdate) -> Ticket | None:
-        if self.get(ticket_id) is None:
+        existing = self.get(ticket_id)
+        if existing is None:
             return None
 
         now = _now()
@@ -103,18 +104,20 @@ class TicketRepository:
             if data.status == "resolved":
                 expr_parts.append("resolved_at = :resolved_at")
                 values[":resolved_at"] = {"S": now}
-            # Append history entry on status transition
-            entry = HistoryEntry(
-                timestamp=now,
-                status=data.status,
-                note=data.note,
-                actor=data.actor,
-            )
-            expr_parts.append(
-                "history = list_append(if_not_exists(history, :empty_list), :new_entry)"
-            )
-            values[":empty_list"] = {"L": []}
-            values[":new_entry"] = {"L": [{"M": _history_entry_to_dynamo(entry)}]}
+            # Only append history when the status is actually changing to avoid
+            # duplicate entries caused by DynamoDB Streams retry re-invocations.
+            if data.status != existing.status:
+                entry = HistoryEntry(
+                    timestamp=now,
+                    status=data.status,
+                    note=data.note,
+                    actor=data.actor,
+                )
+                expr_parts.append(
+                    "history = list_append(if_not_exists(history, :empty_list), :new_entry)"
+                )
+                values[":empty_list"] = {"L": []}
+                values[":new_entry"] = {"L": [{"M": _history_entry_to_dynamo(entry)}]}
 
         if data.resolution is not None:
             expr_parts.append("resolution = :resolution")

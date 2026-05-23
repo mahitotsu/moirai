@@ -83,6 +83,10 @@
   - **制約**: OnlineEvaluationConfig は X-Ray トレース (aws/spans) 初期化後でないと作成不可のため CDK から除外
     → エージェント初回呼び出し後に `make eval-setup` を実行すること
   - 対象評価: Gateway(HELPFULNESS/FAITHFULNESS), Triage(TOOL_SELECTION_ACCURACY), Diagnosis(CORRECTNESS), Resolution(FAITHFULNESS)
+  - **⚠️ 既知の問題 (2026-05-24)**: `make eval-setup` が "One or more specified log groups do not exist" で失敗する
+    - `eval_setup.py` のログループ名を `agora_gateway_ep` → `DEFAULT` に修正済み（ログは DEFAULT エンドポイントに流れるため）
+    - スパンは生成・計装されているが (EMF `otel.sdk.span.started` で確認) ADOT コレクター → X-Ray への転送がサイレント失敗
+    - AgentCore ランタイム内 ADOT コレクターの設定問題と推定。解決まで eval-setup は保留
 - [x] 24. React UI Reports タブ追加
 
 ## V4: 進化する
@@ -102,6 +106,10 @@
 - [x] ハードコード除去リファクタリング (0c532ef) — AWS リージョン・テーブル名・モデルID・Secret パスを環境変数/CDKトークンに移行
 - [x] CDK deprecated 警告解消 (61655e9) — grant_* メソッドを add_to_policy に置換・DynamoEventSource/SqsQueue target をL1に置換
 - [x] E2Eデモ検証 (531bb35) — Dockerfile commonモジュールパス修正・Guardrail出力ブロック解除・V4全機能パイプライン70秒で完走確認
+- [x] E2Eデモ残存バグ修正 (2026-05-24) — 3件の問題を解消:
+  - `lesson_learned` 未設定: Resolution Agent system_prompt を改訂し update_ticket 時の全必須フィールド (status/resolution/category/lesson_learned) を明示
+  - 重複 history エントリ: `ticket-service/app/repository.py` に `data.status != existing.status` ガードを追加・DynamoDB Streams リトライで重複しないことをテストで確認
+  - Chat タブ JSON parse エラー: CloudFront OAC → Lambda に `lambda:InvokeFunctionUrl` 権限を明示付与 (CDK) + `api.ts` に Content-Type チェックを追加
 
 ## 完了済み
 

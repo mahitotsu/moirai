@@ -232,3 +232,18 @@ def test_non_status_update_does_not_append_history(repo: TicketRepository) -> No
     updated = repo.update(ticket.ticket_id, TicketUpdate(resolution="Some note"))
     assert updated is not None
     assert len(updated.history) == 1  # only initial open entry
+
+
+def test_duplicate_status_update_does_not_append_history(repo: TicketRepository) -> None:
+    """Repeated update with same status (e.g. Streams retry) must not create duplicate entries."""
+    ticket = repo.create(
+        TicketCreate(title="Dedup test", description="d", category="other", severity="low")
+    )
+    first = repo.update(ticket.ticket_id, TicketUpdate(status="resolved", resolution="Fixed"))
+    assert first is not None
+    assert len(first.history) == 2  # open + resolved
+
+    # Simulate a DynamoDB Streams retry re-invoking the same update
+    second = repo.update(ticket.ticket_id, TicketUpdate(status="resolved", resolution="Fixed"))
+    assert second is not None
+    assert len(second.history) == 2  # must NOT grow to 3

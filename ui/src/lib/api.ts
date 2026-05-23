@@ -108,6 +108,11 @@ export async function sendChat(
     body: JSON.stringify({ message, userId, sessionId }),
   });
   if (!resp.ok) throw new Error(`Chat error: ${resp.status}`);
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    // CloudFront converts Lambda 403/404 to 200+index.html — surface a clear error.
+    throw new Error(`Chat endpoint returned non-JSON response (check CDK OAC permissions)`);
+  }
   const data = (await resp.json()) as { response: string };
   return data.response;
 }

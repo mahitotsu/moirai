@@ -22,7 +22,7 @@ _CONFIGS = [
     {
         "name": "agora_gateway_evaluation",
         "logical_id": "AgoraGatewayRuntime",
-        "endpoint": "agora_gateway_ep",
+        "endpoint": "DEFAULT",
         "runtime_name": "agora_gateway",
         "evaluators": ["Builtin.Helpfulness", "Builtin.Faithfulness"],
         "description": "Gateway Agent online evaluation — HELPFULNESS / FAITHFULNESS",
@@ -30,7 +30,7 @@ _CONFIGS = [
     {
         "name": "agora_triage_evaluation",
         "logical_id": "AgoraTriageRuntime",
-        "endpoint": "agora_triage_ep",
+        "endpoint": "DEFAULT",
         "runtime_name": "agora_triage",
         "evaluators": ["Builtin.ToolSelectionAccuracy"],
         "description": "Triage Agent online evaluation — TOOL_SELECTION_ACCURACY",
@@ -38,7 +38,7 @@ _CONFIGS = [
     {
         "name": "agora_diagnosis_evaluation",
         "logical_id": "AgoraDiagnosisRuntime",
-        "endpoint": "agora_diagnosis_ep",
+        "endpoint": "DEFAULT",
         "runtime_name": "agora_diagnosis",
         "evaluators": ["Builtin.Correctness"],
         "description": "Diagnosis Agent online evaluation — CORRECTNESS",
@@ -46,7 +46,7 @@ _CONFIGS = [
     {
         "name": "agora_resolution_evaluation",
         "logical_id": "AgoraResolutionRuntime",
-        "endpoint": "agora_resolution_ep",
+        "endpoint": "DEFAULT",
         "runtime_name": "agora_resolution",
         "evaluators": ["Builtin.Faithfulness"],
         "description": "Resolution Agent online evaluation — FAITHFULNESS",
