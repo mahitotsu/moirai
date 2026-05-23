@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V3 — 見える  
-**次のタスク**: #25 DynamoDB Streams 有効化
+**フェーズ**: V4 — 進化する  
+**次のタスク**: #27 V4 stream consumer Lambda 実装 (MODIFY イベント専用)
 
 ---
 
@@ -87,15 +87,13 @@
 
 ## V4: 進化する
 
-- [ ] 25. DynamoDB Streams 有効化
-- [ ] 26. Lambda (stream consumer) 実装
-- [ ] 27. Runbook Generator Agent 実装・デプロイ
-- [ ] 28. SSM Automation Document テンプレート設計
-- [ ] 29. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
-- [ ] 30. 異常集積検知ロジック実装 (N件/30分 → Analysis Agent 即時起動)
-- [ ] 31. React UI Runbooks タブ追加
-- [ ] 32. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
-- [ ] 33. `lesson_learned` フィールド実装 (Resolution Agent が close 時に1文の教訓を書き込む。Knowledge タブはこのフィールドを `resolution` の代わりに主表示に使用)
+- [x] 25. DynamoDB Streams 有効化 (`StreamViewType.NEW_AND_OLD_IMAGES` — V2 時点で完了済み)
+- [x] 26. Lambda (stream consumer) 実装 (ticket-dispatcher が INSERT イベントを処理 — V2 時点で完了済み)
+- [ ] 27. V4 stream consumer Lambda 実装 (MODIFY イベント専用: ticket resolved → 知識結晶化)
+- [ ] 28. 知識の結晶化ロジック実装 (Ticket resolved → Knowledge テーブル自動更新)
+- [ ] 29. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
+- [ ] 30. `lesson_learned` フィールド実装 (Resolution Agent が close 時に1文の教訓を書き込む。Knowledge タブはこのフィールドを `resolution` の代わりに主表示に使用)
+- [ ] 31. Gateway Agent system_prompt 改訂 (Chat の役割を「チケット×Knowledge 横断クエリ」と「Guardrails 実演」に絞る。横断クエリを得意とする旨を明示し、Analysis Agent 起動などボタン代替可能な指示は受け付けない旨を追記)
 
 ---
 

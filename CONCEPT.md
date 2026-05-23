@@ -77,24 +77,28 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
   Chat タブ   : エージェントの応答を確認・アドホック質問
 ```
 
-### サブシナリオ：アドホック質問・問い合わせ
+### サブシナリオ：Chat — 2つのデモポイント
 
-Chat タブはインシデントの自動処理フローを観察しながら、その場で質問・照会できるインターフェース。
+Chat タブは以下の2点に絞ってデモ価値を持たせる。
 
-**受け付ける質問の種類**
+#### 1. チケット×Knowledge 横断クエリ
+
+複数チケットと Knowledge テーブルをまたいだ質問に答える。ボタンや一覧画面では代替できない推論を見せる。
 
 | 質問例 | 使うツール |
 |---|---|
-| 「このエラーの一般的な原因は？」（障害事例・対応策） | Community Knowledge MCP群 |
-| 「過去の解決済み事例でDBカテゴリが多いのはなぜ？」（傾向分析） | Ticket Service MCP |
-| 「今対応中の重大インシデントはある？」（進捗・重大度確認） | Ticket Service MCP |
-| 「fake-api-server のエラー率は今どのくらい？」（稼働状況確認） | CloudWatch MCP |
-| 「このアラーム、手動で診断してほしい」（手動診断トリガー） | Triage→Diagnosis→Resolution パイプライン |
+| 「最近 resolved されたチケットで共通の根本原因は何か？」 | Ticket Service MCP + Knowledge MCP |
+| 「api-error カテゴリの過去事例と今回の症状を比較してほしい」 | Ticket Service MCP + Community Knowledge MCP群 |
+| 「lesson_learned の中で最も再発頻度が高いパターンは？」（V4以降） | Ticket Service MCP |
 
-**扱わない操作（System Promptで明示的に禁止）**
+#### 2. Guardrails の実演（禁止操作を試みて弾かれる）
 
-- 実システムへの変更実行（Lambda再起動・設定変更など）— 提案・分析にとどめる
-- FIS実験の操作（障害注入の開始・停止）— デモ環境の意図しない操作を防ぐ
+「FIS 実験を止めてください」「Lambda を再起動してください」のような操作指示を入力すると Bedrock Guardrails の Denied Topics がブロックし、拒否メッセージを返す。安全ポリシーがコードではなくインフラレベルで強制されていることを可視化する。
+
+**扱わない操作（System Promptで明示的に禁止 + Guardrailsでブロック）**
+
+- 実システムへの変更実行（Lambda再起動・設定変更など）
+- FIS実験の操作（障害注入の開始・停止）
 
 ### V3: 見える
 
@@ -110,12 +114,9 @@ Analysis Agent が起動
 
 ```
 DynamoDB Streams: Ticket が resolved に更新されたことを検知
-→ Runbook Generator Agent を自動起動
-→ SSM Automation Document としてランブックを生成・保存
-→ Knowledge テーブルを自動更新（次回の Diagnosis Agent が活用）
+→ Knowledge テーブルを自動更新（知識の結晶化 — 次回の Diagnosis Agent が活用）
+→ lesson_learned フィールドに Resolution Agent が教訓を書き込む
 
-同カテゴリのチケットが N件/30分 集積
-→ Analysis Agent を即時起動（異常アラートレポート生成）
 ```
 
 ---
@@ -148,8 +149,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
   ├── Chat タブ ────────── AG-UI (HTTP POST) でアドホック質問・応答受信
   ├── Tickets タブ ──────── Ticket Service REST API 直接
   ├── Knowledge タブ ────── Ticket Service REST API 直接
-  ├── Reports タブ (V3) ─── Reports Service REST API 直接
-  └── Runbooks タブ (V4) ── SSM API 直接
+  └── Reports タブ (V3) ─── Reports Service REST API 直接
 
       ↕ AG-UI (HTTP POST)
 
@@ -162,7 +162,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 │   Diagnosis Agent       知識検索・類似事例照合        │
 │   Resolution Agent      解決提案の生成               │
 │   Analysis Agent (V3)   稼働レポート・傾向分析        │
-│   Runbook Generator (V4) ランブック自動生成           │
+│   (V4 は stream consumer Lambda のみ追加)             │
 └─────────────────────────────────────────────────────┘
       ↕ AgentCore Registry 経由で capability 検索・呼び出し
 
@@ -187,14 +187,13 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 │   Asset Service     構成管理DB                       │
 └─────────────────────────────────────────────────────┘
 
-      ↕ DynamoDB Streams (V3)
+      ↕ DynamoDB Streams (V4)
 
 ┌─────────────────────────────────────────────────────┐
 │ 知識進化レイヤー (V4)                                 │
 │   Lambda (stream consumer)                           │
-│   → Ticket RESOLVED : Runbook Generator Agent 起動   │
-│   → N件/30分集積    : Analysis Agent 即時起動        │
-│   SSM Automation Documents  生成済みランブックの保存  │
+│   → Ticket RESOLVED : Knowledge テーブル自動更新     │
+│                       lesson_learned を書き込む       │
 └─────────────────────────────────────────────────────┘
 
 横断サービス:
@@ -293,9 +292,7 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 | イベント | トリガー | 処理 |
 |---|---|---|
-| Ticket RESOLVED | チケットがresolved に更新 | Runbook Generator Agent を起動 → SSM Automation Document を生成・更新 |
-| Ticket RESOLVED | 同上 | Knowledge テーブルを自動更新（知識の結晶化） |
-| N件/30分集積 | 同カテゴリのチケットが閾値超え | Analysis Agent を即時起動（異常アラートレポート生成） |
+| Ticket RESOLVED | チケットがresolved に更新 | Knowledge テーブルを自動更新（知識の結晶化）+ lesson_learned を書き込む |
 
 ---
 
@@ -305,13 +302,12 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 | タブ | 内容 | データ取得方法 | フェーズ |
 |---|---|---|---|
-| Chat | アドホック質問・問い合わせ | AG-UI / HTTP POST（エージェント経由） | V1 |
+| Chat | チケット×Knowledge 横断クエリ・Guardrails 実演（禁止操作ブロック） | AG-UI / HTTP POST（エージェント経由） | V1 |
 | Tickets | 自動起票されたインシデント一覧・詳細・診断結果 | Ticket Service REST API 直接 | V1 |
 | Knowledge | 解決済みパターンのブラウズ | Ticket Service REST API 直接 | V1 |
 | Reports | Analysis Agentの稼働レポート | Reports API 直接 | V3 |
-| Runbooks | SSM Automation Document一覧 | SSM API 直接 | V4 |
 
-> Browse系タブ（Tickets / Knowledge / Reports / Runbooks）はエージェントを経由せず各サービスのREST APIを直接呼び出す。これによりエージェント導入後もAPIの公開契約が維持されていることをUIレベルでも実証する。
+> Browse系タブ（Tickets / Knowledge / Reports）はエージェントを経由せず各サービスのREST APIを直接呼び出す。これによりエージェント導入後もAPIの公開契約が維持されていることをUIレベルでも実証する。
 
 ---
 
@@ -325,7 +321,6 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 | コンテナ | ARM64 Docker → ECR → AgentCore Runtime |
 | フロントエンド | React |
 | データストア | DynamoDB（Ticket / Asset / Reports / Knowledge） |
-| ランブック | AWS Systems Manager Automation Documents |
 | 監視対象システム | Lambda (EC2 DescribeInstances) + EventBridge Scheduler + AWS FIS |
 | アラーム連携 | CloudWatch アラーム + EventBridge + SQS + Bridge Lambda |
 | 知識進化 | DynamoDB Streams + Lambda (V3) |
@@ -369,10 +364,9 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 **V4: 進化する**
 - DynamoDB Streams + Lambda（知識進化レイヤー）
-- Runbook Generator Agent → SSM Automation Documents
 - 知識の結晶化（Ticket resolved → Knowledge テーブル自動更新）
-- 異常集積検知（N件/30分 → Analysis Agent 即時起動）
-- React UI Runbooks タブ追加
+- lesson_learned フィールド（Resolution Agent が教訓を書き込む）
+- Ticket 履歴追跡（history フィールド）
 
 ### Out（作らない）
 
@@ -420,10 +414,9 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 ### V4: 進化する
 
-24. DynamoDB Streams 有効化
-25. Lambda（stream consumer）実装
-26. Runbook Generator Agent 実装・デプロイ
-27. SSM Automation Document テンプレート設計
-28. 知識の結晶化ロジック実装（Knowledge テーブル自動更新）
-29. 異常集積検知ロジック実装
-30. React UI Runbooks タブ追加
+24. ✅ DynamoDB Streams 有効化（V2 時点で完了済み）
+25. ✅ Lambda（stream consumer）実装（ticket-dispatcher として V2 時点で完了済み）
+26. V4 stream consumer Lambda 実装（MODIFY イベント専用）
+27. 知識の結晶化ロジック実装（Knowledge テーブル自動更新）
+28. lesson_learned フィールド実装（Resolution Agent が教訓を書き込む）
+29. Ticket 履歴追跡実装（history フィールド）
