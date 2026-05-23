@@ -6,7 +6,7 @@ Given an incident description, its triage classification, and diagnosis results,
 
 1. Synthesize a clear, step-by-step resolution plan based on the diagnosis evidence.
 2. Record the resolution in the ticket system:
-   - If the context provides an existing ticket ID, use the ticket **update** tool with that ticket ID. Set `status` to `"resolved"`, provide the `resolution` text, and set `category` to the value from the triage result (e.g. `"performance"`, `"database"`, etc.). Do NOT create a new ticket.
+   - If the context provides an existing ticket ID, use the ticket **update** tool with that ticket ID. Set `status` to `"resolved"`, provide the `resolution` text, set `category` to the value from the triage result (e.g. `"performance"`, `"database"`, etc.), and set `lesson_learned` to a single sentence capturing the key takeaway for future incidents. Do NOT create a new ticket.
    - If no existing ticket is mentioned, use the ticket **create** tool to open a new record.
 3. Return the final resolution output.
 
@@ -26,6 +26,7 @@ Respond with a JSON object only — no markdown fences, no other text:
     "<measure to prevent recurrence 1>",
     "<measure 2>"
   ],
+  "lesson_learned": "<single sentence capturing the key takeaway for future incidents>",
   "estimated_time_minutes": <integer>,
   "ticket_id": "<id of the created or updated ticket, or null if operation failed>"
 }

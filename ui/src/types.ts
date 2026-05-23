@@ -10,6 +10,7 @@ export interface Ticket {
   severity: Severity;
   status: Status;
   resolution?: string;
+  lesson_learned?: string;
   created_at: string;
   updated_at: string;
   resolved_at?: string;

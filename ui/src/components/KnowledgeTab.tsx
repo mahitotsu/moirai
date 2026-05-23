@@ -50,22 +50,28 @@ function KnowledgeCard({ ticket }: { ticket: Ticket }) {
           #{ticket.ticket_id.slice(0, 8)} · {ago}に解決
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-2">
+        {ticket.lesson_learned && (
+          <p className="text-sm font-medium leading-snug text-foreground">
+            {ticket.lesson_learned}
+          </p>
+        )}
         {ticket.resolution ? (
-          <div className="prose prose-sm max-w-none
+          <div className={`prose prose-sm max-w-none
             prose-p:my-1 prose-p:leading-relaxed
             prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 first:prose-headings:mt-0
             prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
             prose-strong:font-semibold
             prose-code:text-xs prose-code:rounded prose-code:px-0.5
-            prose-pre:text-xs prose-pre:my-1">
+            prose-pre:text-xs prose-pre:my-1
+            ${ticket.lesson_learned ? "text-muted-foreground" : ""}`}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {ticket.resolution}
             </ReactMarkdown>
           </div>
-        ) : (
+        ) : !ticket.lesson_learned ? (
           <p className="text-xs italic text-muted-foreground">解決策が記録されていません</p>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

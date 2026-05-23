@@ -85,6 +85,29 @@ def test_resolve_ticket(repo: TicketRepository) -> None:
     assert updated.resolved_at is not None
 
 
+def test_lesson_learned_field(repo: TicketRepository) -> None:
+    created = repo.create(
+        TicketCreate(
+            title="Memory leak",
+            description="OOM after 2 hours",
+            category="memory",
+            severity="high",
+        )
+    )
+    updated = repo.update(
+        created.ticket_id,
+        TicketUpdate(
+            status="resolved",
+            resolution="Restarted service and patched memory leak",
+            lesson_learned="Always add memory limits to containers to prevent OOM cascades.",
+        ),
+    )
+    assert updated is not None
+    expected = "Always add memory limits to containers to prevent OOM cascades."
+    assert updated.lesson_learned == expected
+    assert updated.resolution == "Restarted service and patched memory leak"
+
+
 def test_update_nonexistent(repo: TicketRepository) -> None:
     result = repo.update("no-such-id", TicketUpdate(status="closed"))
     assert result is None

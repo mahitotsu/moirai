@@ -30,6 +30,7 @@ class TicketUpdate(BaseModel):
         "properties": {
             "status": {"type": "string", "enum": list(Status.__args__)},  # type: ignore[attr-defined]
             "resolution": {"type": "string"},
+            "lesson_learned": {"type": "string"},
             "category": {"type": "string", "enum": list(Category.__args__)},  # type: ignore[attr-defined]
             "note": {"type": "string"},
             "actor": {"type": "string"},
@@ -37,6 +38,7 @@ class TicketUpdate(BaseModel):
     })
     status: Status | None = None
     resolution: str | None = None
+    lesson_learned: str | None = None
     category: Category | None = None
     note: str | None = None
     actor: str = "system"
@@ -50,6 +52,7 @@ class Ticket(BaseModel):
     severity: str
     status: str
     resolution: str | None = None
+    lesson_learned: str | None = None
     created_at: str
     updated_at: str
     resolved_at: str | None = None

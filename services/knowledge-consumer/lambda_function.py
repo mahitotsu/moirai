@@ -27,18 +27,19 @@ def _is_newly_resolved(record: dict) -> bool:
 def _crystallize(new_image: dict) -> None:
     """Write (or overwrite) a knowledge record derived from a resolved ticket."""
     ticket_id = new_image["ticket_id"]["S"]
-    _dynamodb.put_item(
-        TableName=_KNOWLEDGE_TABLE,
-        Item={
-            "knowledge_id": {"S": ticket_id},
-            "ticket_id": {"S": ticket_id},
-            "title": {"S": new_image.get("title", {}).get("S", "")},
-            "category": {"S": new_image.get("category", {}).get("S", "other")},
-            "resolution": {"S": new_image.get("resolution", {}).get("S", "")},
-            "crystallized_at": {"S": datetime.now(UTC).isoformat()},
-            "source": {"S": "ticket-resolved"},
-        },
-    )
+    item: dict = {
+        "knowledge_id": {"S": ticket_id},
+        "ticket_id": {"S": ticket_id},
+        "title": {"S": new_image.get("title", {}).get("S", "")},
+        "category": {"S": new_image.get("category", {}).get("S", "other")},
+        "resolution": {"S": new_image.get("resolution", {}).get("S", "")},
+        "crystallized_at": {"S": datetime.now(UTC).isoformat()},
+        "source": {"S": "ticket-resolved"},
+    }
+    lesson_learned = new_image.get("lesson_learned", {}).get("S")
+    if lesson_learned:
+        item["lesson_learned"] = {"S": lesson_learned}
+    _dynamodb.put_item(TableName=_KNOWLEDGE_TABLE, Item=item)
     logger.info("knowledge crystallized: ticket_id=%s", ticket_id)
 
 

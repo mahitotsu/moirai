@@ -117,3 +117,20 @@ def test_crystallize_builds_correct_knowledge_item() -> None:
     assert item["resolution"]["S"] == "Restart resolved it."
     assert item["source"]["S"] == "ticket-resolved"
     assert "crystallized_at" in item
+    assert "lesson_learned" not in item
+
+
+def test_crystallize_includes_lesson_learned_when_present() -> None:
+    """lesson_learned フィールドがあれば knowledge レコードに含まれる。"""
+    new_image = {
+        "ticket_id": {"S": "t-100"},
+        "title": {"S": "DB slow"},
+        "category": {"S": "database"},
+        "resolution": {"S": "Added index."},
+        "lesson_learned": {"S": "Add indexes before high-traffic launches."},
+    }
+    with patch.object(lambda_function, "_dynamodb") as mock_db:
+        lambda_function._crystallize(new_image)
+
+    item = mock_db.put_item.call_args.kwargs["Item"]
+    assert item["lesson_learned"]["S"] == "Add indexes before high-traffic launches."

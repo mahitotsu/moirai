@@ -48,6 +48,7 @@ def _to_ticket(item: dict[str, Any]) -> Ticket:
         severity=item["severity"]["S"],
         status=item["status"]["S"],
         resolution=item["resolution"]["S"] if "resolution" in item else None,
+        lesson_learned=item["lesson_learned"]["S"] if "lesson_learned" in item else None,
         created_at=item["created_at"]["S"],
         updated_at=item["updated_at"]["S"],
         resolved_at=item["resolved_at"]["S"] if "resolved_at" in item else None,
@@ -118,6 +119,10 @@ class TicketRepository:
         if data.resolution is not None:
             expr_parts.append("resolution = :resolution")
             values[":resolution"] = {"S": data.resolution}
+
+        if data.lesson_learned is not None:
+            expr_parts.append("lesson_learned = :lesson_learned")
+            values[":lesson_learned"] = {"S": data.lesson_learned}
 
         if data.category is not None:
             expr_parts.append("category = :category")
