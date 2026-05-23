@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V3 — 見える  
-**次のタスク**: #23 AgentCore Evaluations 設定
+**次のタスク**: #24 React UI Reports タブ追加
 
 ---
 
@@ -77,11 +77,12 @@
   - `services/reports-service/` 作成: FastAPI (GET/POST /reports)、`agora-reports` DynamoDB テーブル追加
   - Gateway Agent に `run_analysis` ツール追加・system_prompt 更新
   - CDK: agora-reports テーブル / ReportsServiceFn / AgoraAnalysisRuntime / CloudFront `/api/reports*` / CatalogVersion→5
-- [ ] 23. AgentCore Evaluations 設定
-  - Online 評価: Gateway Agent に HELPFULNESS / FAITHFULNESS
-  - Online 評価: Triage Agent に TOOL_SELECTION_ACCURACY
-  - Online 評価: Diagnosis Agent に CORRECTNESS
-  - Online 評価: Resolution Agent に FAITHFULNESS
+- [x] 23. AgentCore Evaluations 設定
+  - `agora-evaluation-execution-role` IAM ロール追加 (bedrock-agentcore trust + InvokeModel + CW Logs) — CDK管理
+  - `scripts/eval_setup.py` + `make eval-setup` 追加 — 4エージェント分の OnlineEvaluationConfig を作成
+  - **制約**: OnlineEvaluationConfig は X-Ray トレース (aws/spans) 初期化後でないと作成不可のため CDK から除外
+    → エージェント初回呼び出し後に `make eval-setup` を実行すること
+  - 対象評価: Gateway(HELPFULNESS/FAITHFULNESS), Triage(TOOL_SELECTION_ACCURACY), Diagnosis(CORRECTNESS), Resolution(FAITHFULNESS)
 - [ ] 24. React UI Reports タブ追加
 
 ## V4: 進化する

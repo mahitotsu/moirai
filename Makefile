@@ -1,4 +1,10 @@
 
+# ─── 変数定義 ──────────────────────────────────────────────────────────────────
+_REGION           := us-east-1
+_SCHEDULE_NAME    := agora-fake-api-server-schedule
+_MONITORING_STACK := FaultInjectionStack
+
+# ─── コマンド一覧 ──────────────────────────────────────────────────────────────
 # make test                       — 全テスト
 # make test-service s=ticket-service — サービス単体テスト
 # make lint                       — ruff + mypy
@@ -12,11 +18,14 @@
 # make demo-inject                — FIS 実験開始 (障害注入)
 # make demo-stop                  — Scheduler 無効化 + 実行中 FIS 実験を強制終了
 #
-# Observability セットアップ (V3, アカウントごとに1回):
+# Observability セットアップ (V3, アカウントごとに1回・冪等):
 # make obs-setup                  — CloudWatch Transaction Search 有効化 (X-Ray → CloudWatch)
+#
+# Evaluations セットアップ (V3, エージェント初回呼び出し後・冪等):
+# make eval-setup                 — obs-setup を実行してから OnlineEvaluationConfig を作成
 
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-start demo-inject demo-stop obs-setup
+        demo-start demo-inject demo-stop obs-setup eval-setup
 
 test:
 	@failed=0; \
@@ -94,10 +103,6 @@ obs-setup:
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
 
-_REGION        := us-east-1
-_SCHEDULE_NAME := agora-fake-api-server-schedule
-_MONITORING_STACK := FaultInjectionStack
-
 demo-start:
 	@echo "==> Enabling EventBridge Scheduler (traffic starts, baseline metrics build up)..."
 	@TARGET=$$(aws scheduler get-schedule --name $(_SCHEDULE_NAME) --region $(_REGION) --query 'Target' --output json); \
@@ -144,3 +149,12 @@ demo-stop:
 	  aws fis stop-experiment --id "$$exp_id" --region $(_REGION) > /dev/null; \
 	done
 	@echo "==> Done. All traffic stopped."
+
+# ─── V3 評価設定 ──────────────────────────────────────────────────────────────
+# OnlineEvaluationConfig は bedrock-agentcore 内部レジストリの初期化に
+# X-Ray トレース (aws/spans) が必要なため、CDK デプロイ後・エージェント初回呼び出し後に実行する。
+
+eval-setup: obs-setup
+	@echo "==> Creating OnlineEvaluationConfig for all agents..."
+	@uv run python scripts/eval_setup.py
+	@echo "==> Done. Check AWS Console → Bedrock AgentCore → Evaluations."

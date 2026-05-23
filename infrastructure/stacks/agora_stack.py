@@ -55,7 +55,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 _GUARDRAIL_VERSION = "DRAFT"
 _CATALOG_VERSION = "5"
 _API_KEY_LENGTH = 32
-_MEMORY_EXPIRY_DAYS = 90
+_MEMORY_EXPIRY_DAYS = 7
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
 _TICKETS_STATUS_INDEX = "status-created_at-index"
@@ -1349,6 +1349,57 @@ class AgoraStack(cdk.Stack):
             # Cedar ポリシーの action 名は GatewayTarget 登録後に有効化されるため明示依存
             for _gw_target in _gw_targets:
                 _cfn_policy.node.add_dependency(_gw_target)
+
+        # =====================================================================
+        # AGENTCORE EVALUATIONS — Online 評価設定 (V3)
+        # =====================================================================
+        eval_execution_role = iam.Role(
+            self,
+            "EvaluationExecutionRole",
+            role_name="agora-evaluation-execution-role",
+            assumed_by=iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+        )
+        eval_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/*",
+                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
+                    "arn:aws:bedrock:*::foundation-model/*",
+                ],
+            )
+        )
+        eval_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:FilterLogEvents",
+                    "logs:GetLogEvents",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                    "logs:StartQuery",
+                    "logs:GetQueryResults",
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+        eval_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:GetAgentRuntime",
+                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:ListAgentRuntimeEndpoints",
+                ],
+                resources=["*"],
+            )
+        )
+
+        # OnlineEvaluationConfig は bedrock-agentcore 内部レジストリの初期化に
+        # X-Ray トレース (aws/spans) の存在が必要なため、CDK デプロイ時点では作成不可。
+        # エージェント初回呼び出し後に make eval-setup で作成する。
 
         # =====================================================================
         # REGISTRY CATALOG — Lambda-backed Custom Resource
