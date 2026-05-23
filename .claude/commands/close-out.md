@@ -23,8 +23,8 @@
 3. **Python テスト**
    `.test-passed` のタイムスタンプと、テスト対象ファイルの最終更新時刻を比較してスキップ可否を判断する。
    ```bash
-   # .test-passed より新しいコードファイルがあるか確認
-   find services/ mcp-servers/ agents/ -newer .test-passed \( -name "*.py" \) 2>/dev/null | head -5
+   # .test-passed より新しいコードファイルがあるか確認 (CDK infrastructure を含む)
+   find services/ mcp-servers/ agents/ infrastructure/ -newer .test-passed \( -name "*.py" \) 2>/dev/null | grep -v cdk.out | head -5
    ```
    - 出力が空（変更なし）→ **テストスキップ**。最終実行日時をユーザーに伝えて次へ進む
    - 出力あり（変更あり）または `.test-passed` が存在しない → `make test` を実行。失敗があれば修正してから次へ
@@ -41,7 +41,15 @@
      npm --prefix ui run build
      ```
 
-5. **テスト用テーブルの後片付け確認**
+5. **CDK 差分確認** (`infrastructure/` に変更がある場合、または前回デプロイ以降 infrastructure/ のファイルが変わった可能性がある場合)
+   ```bash
+   find infrastructure/ -newer .test-passed \( -name "*.py" \) 2>/dev/null | grep -v cdk.out | head -5
+   ```
+   - 出力が空 → **スキップ**
+   - 出力あり → `make cdk-diff` を実行してシンセシスエラーやデプロイ差分を確認する。  
+     エラー（例: Docker バンドリング失敗・型エラー）があれば修正してから次へ
+
+6. **テスト用テーブルの後片付け確認**
    ```bash
    aws dynamodb list-tables --region us-east-1 --query "TableNames[?starts_with(@, 'agora-test-')]"
    ```

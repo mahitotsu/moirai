@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import aws_cdk as cdk
@@ -18,9 +20,33 @@ import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_secretsmanager as secretsmanager
 import aws_cdk.aws_sqs as sqs
 import aws_cdk.aws_ssm as ssm
+import jsii
 from aws_cdk.aws_s3_deployment import BucketDeployment, Source
 from constructs import Construct
 from pydantic_settings import BaseSettings
+
+
+@jsii.implements(cdk.ILocalBundling)
+class _LocalPipBundler:
+    """Docker なしで pip install + ソースコピーを行うローカルバンドラー。
+    boto3 のような純粋 Python パッケージに使用する。
+    Docker が利用不可の環境（WSL2 など）でも CDK synth / テストが通る。
+    """
+
+    def __init__(self, source_dir: Path) -> None:
+        self._source = source_dir
+
+    def try_bundle(self, output_dir: str, options: cdk.BundlingOptions) -> bool:
+        req = self._source / "requirements.txt"
+        if req.exists() and req.read_text().strip():
+            subprocess.check_call(
+                ["uv", "pip", "install", "-r", str(req), "--target", output_dir, "--quiet"]
+            )
+        for item in self._source.iterdir():
+            if item.is_file() and item.name not in ("requirements.txt",):
+                shutil.copy2(item, output_dir)
+        return True
+
 
 _ROOT = Path(__file__).parent.parent.parent
 _UI_DIR = str(_ROOT / "ui")
@@ -947,16 +973,7 @@ class AgoraStack(cdk.Stack):
             function_name="agora-ticket-dispatcher",
             code=lambda_.Code.from_asset(
                 str(_SERVICES_DIR / "ticket-dispatcher"),
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    platform="linux/arm64",
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output"
-                        " && cp lambda_function.py /asset-output/",
-                    ],
-                ),
+                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
             ),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
@@ -1445,6 +1462,7 @@ class AgoraStack(cdk.Stack):
                 str(_LAMBDA_DIR),
                 bundling=cdk.BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    local=_LocalPipBundler(_LAMBDA_DIR),
                     command=[
                         "bash",
                         "-c",
