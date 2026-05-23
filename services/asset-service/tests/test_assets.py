@@ -1,12 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+import time
+from collections.abc import Callable, Generator
 
 import pytest
 from app.main import app, get_repository
 from app.models import AssetCreate, AssetUpdate
 from app.repository import AssetRepository
 from fastapi.testclient import TestClient
+
+
+def _wait_for_gsi[T](
+    fn: Callable[[], list[T]], *, expected: int = 1, retries: int = 5, delay: float = 1.0
+) -> list[T]:
+    """GSI の結果整合性を考慮してリトライする。書き込み直後の GSI クエリに使用する。"""
+    result: list[T] = []
+    for _ in range(retries):
+        result = fn()
+        if len(result) >= expected:
+            return result
+        time.sleep(delay)
+    return result
 
 
 @pytest.fixture
@@ -95,14 +109,14 @@ def test_update_nonexistent(repo: AssetRepository) -> None:
 def test_list_by_type(repo: AssetRepository) -> None:
     repo.create(AssetCreate(name="db-replica-1", type="database", environment="production"))
     repo.create(AssetCreate(name="db-replica-2", type="database", environment="staging"))
-    assets = repo.list_by_type("database")
+    assets = _wait_for_gsi(lambda: repo.list_by_type("database"), expected=2)
     assert len(assets) >= 2
     assert all(a.type == "database" for a in assets)
 
 
 def test_list_by_environment(repo: AssetRepository) -> None:
     repo.create(AssetCreate(name="dev-server-1", type="server", environment="development"))
-    assets = repo.list_by_environment("development")
+    assets = _wait_for_gsi(lambda: repo.list_by_environment("development"), expected=1)
     assert len(assets) >= 1
     assert all(a.environment == "development" for a in assets)
 
