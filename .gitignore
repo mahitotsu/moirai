@@ -21,6 +21,7 @@ ui/build/
 
 # AWS CDK
 infrastructure/cdk.out/
+infrastructure/cdk.out.*/
 infrastructure/import-mapping.json
 
 # Docker
