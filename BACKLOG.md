@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V3 — 見える  
-**次のタスク**: #24 React UI Reports タブ追加
+**次のタスク**: #25 DynamoDB Streams 有効化
 
 ---
 
@@ -83,7 +83,7 @@
   - **制約**: OnlineEvaluationConfig は X-Ray トレース (aws/spans) 初期化後でないと作成不可のため CDK から除外
     → エージェント初回呼び出し後に `make eval-setup` を実行すること
   - 対象評価: Gateway(HELPFULNESS/FAITHFULNESS), Triage(TOOL_SELECTION_ACCURACY), Diagnosis(CORRECTNESS), Resolution(FAITHFULNESS)
-- [ ] 24. React UI Reports タブ追加
+- [x] 24. React UI Reports タブ追加
 
 ## V4: 進化する
 
