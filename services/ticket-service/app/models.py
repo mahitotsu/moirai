@@ -9,6 +9,13 @@ Severity = Literal["low", "medium", "high", "critical"]
 Status = Literal["open", "investigating", "resolved", "closed"]
 
 
+class HistoryEntry(BaseModel):
+    timestamp: str
+    status: str
+    note: str | None = None
+    actor: str
+
+
 class TicketCreate(BaseModel):
     title: str
     description: str
@@ -24,11 +31,15 @@ class TicketUpdate(BaseModel):
             "status": {"type": "string", "enum": list(Status.__args__)},  # type: ignore[attr-defined]
             "resolution": {"type": "string"},
             "category": {"type": "string", "enum": list(Category.__args__)},  # type: ignore[attr-defined]
+            "note": {"type": "string"},
+            "actor": {"type": "string"},
         }
     })
     status: Status | None = None
     resolution: str | None = None
     category: Category | None = None
+    note: str | None = None
+    actor: str = "system"
 
 
 class Ticket(BaseModel):
@@ -42,3 +53,4 @@ class Ticket(BaseModel):
     created_at: str
     updated_at: str
     resolved_at: str | None = None
+    history: list[HistoryEntry] = []

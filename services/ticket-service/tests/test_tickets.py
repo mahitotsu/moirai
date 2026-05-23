@@ -144,3 +144,68 @@ def test_api_patch(client: TestClient) -> None:
     body = patch_resp.json()
     assert body["status"] == "resolved"
     assert body["resolved_at"] is not None
+
+
+def test_create_ticket_has_initial_history(repo: TicketRepository) -> None:
+    ticket = repo.create(
+        TicketCreate(title="History init test", description="d", category="other", severity="low")
+    )
+    assert len(ticket.history) == 1
+    entry = ticket.history[0]
+    assert entry.status == "open"
+    assert entry.actor == "system"
+    assert entry.note is None
+    assert entry.timestamp
+
+
+def test_update_appends_history_entry(repo: TicketRepository) -> None:
+    ticket = repo.create(
+        TicketCreate(title="History update test", description="d", category="other", severity="low")
+    )
+    updated = repo.update(
+        ticket.ticket_id,
+        TicketUpdate(
+            status="investigating",
+            note="Starting root cause analysis",
+            actor="triage-agent",
+        ),
+    )
+    assert updated is not None
+    assert len(updated.history) == 2
+    last = updated.history[-1]
+    assert last.status == "investigating"
+    assert last.note == "Starting root cause analysis"
+    assert last.actor == "triage-agent"
+
+
+def test_resolve_appends_history_with_actor(repo: TicketRepository) -> None:
+    ticket = repo.create(
+        TicketCreate(
+            title="Resolve history test", description="d", category="deploy", severity="critical"
+        )
+    )
+    repo.update(ticket.ticket_id, TicketUpdate(status="investigating", actor="triage-agent"))
+    resolved = repo.update(
+        ticket.ticket_id,
+        TicketUpdate(
+            status="resolved",
+            resolution="Rolled back",
+            note="Resolved via rollback",
+            actor="resolution-agent",
+        ),
+    )
+    assert resolved is not None
+    assert len(resolved.history) == 3
+    assert resolved.history[0].status == "open"
+    assert resolved.history[1].status == "investigating"
+    assert resolved.history[2].status == "resolved"
+    assert resolved.history[2].actor == "resolution-agent"
+
+
+def test_non_status_update_does_not_append_history(repo: TicketRepository) -> None:
+    ticket = repo.create(
+        TicketCreate(title="No history change", description="d", category="other", severity="low")
+    )
+    updated = repo.update(ticket.ticket_id, TicketUpdate(resolution="Some note"))
+    assert updated is not None
+    assert len(updated.history) == 1  # only initial open entry
