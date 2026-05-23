@@ -10,6 +10,6 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY gateway/agent.py gateway/system_prompt.md gateway/tools.py ./
-COPY common/ ./agents/common/
+COPY common/ ./common/
 EXPOSE 8080
 CMD ["opentelemetry-instrument", "python", "agent.py"]

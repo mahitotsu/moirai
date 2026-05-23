@@ -725,6 +725,8 @@ class AgoraStack(cdk.Stack):
                             "Run the chaos experiment",
                         ],
                         type="DENY",
+                        input_enabled=True,
+                        output_enabled=False,
                     ),
                 ]
             ),
