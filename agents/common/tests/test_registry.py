@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
+
+import common.registry as registry_module
 from common.registry import discover_a2a_agents, discover_by_capability
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Prevent cache from leaking between tests."""
+    registry_module._cache.clear()
+    yield
+    registry_module._cache.clear()
 
 
 def _control_client(
@@ -69,8 +80,8 @@ def test_discover_by_capability_returns_matching_server():
         mcp_records=[{"recordId": "r1", "name": "stackoverflow", "status": "APPROVED"}],
         record_details={"r1": _mcp_detail("community-knowledge", "agora_stackoverflow", "so_ep")},
     )
-    with patch("boto3.client", return_value=control):
-        result = discover_by_capability("community-knowledge")
+    registry_module._control = control
+    result = discover_by_capability("community-knowledge")
 
     assert len(result) == 1
     assert result[0]["name"] == "agora_stackoverflow"
@@ -84,8 +95,8 @@ def test_discover_by_capability_excludes_different_capability():
         mcp_records=[{"recordId": "r1", "name": "cloudwatch", "status": "APPROVED"}],
         record_details={"r1": _mcp_detail("aws-observability", "agora_cloudwatch")},
     )
-    with patch("boto3.client", return_value=control):
-        result = discover_by_capability("community-knowledge")
+    registry_module._control = control
+    result = discover_by_capability("community-knowledge")
 
     assert result == []
 
@@ -96,8 +107,8 @@ def test_discover_by_capability_excludes_inactive_records():
         mcp_records=[{"recordId": "r1", "name": "so", "status": "INACTIVE"}],
         record_details={"r1": _mcp_detail("community-knowledge", "agora_stackoverflow")},
     )
-    with patch("boto3.client", return_value=control):
-        result = discover_by_capability("community-knowledge")
+    registry_module._control = control
+    result = discover_by_capability("community-knowledge")
 
     assert result == []
 
@@ -105,10 +116,9 @@ def test_discover_by_capability_excludes_inactive_records():
 def test_discover_by_capability_returns_empty_when_no_registry():
     """Registry が存在しない場合は空リストを返す。"""
     control = _control_client(registries=[])
-    with patch("boto3.client", return_value=control):
-        result = discover_by_capability("community-knowledge")
-
-    assert result == []
+    registry_module._control = control
+    with pytest.raises(RuntimeError, match="not found or not READY"):
+        discover_by_capability("community-knowledge")
 
 
 def test_discover_by_capability_handles_pagination():
@@ -132,9 +142,8 @@ def test_discover_by_capability_handles_pagination():
     }
     control = _control_client(record_details=record_details)
     control.list_registry_records.side_effect = list_records
-
-    with patch("boto3.client", return_value=control):
-        result = discover_by_capability("community-knowledge")
+    registry_module._control = control
+    result = discover_by_capability("community-knowledge")
 
     assert len(result) == 2
     assert {r["name"] for r in result} == {"agora_stackoverflow", "agora_github_issues"}
@@ -157,8 +166,8 @@ def test_discover_a2a_agents_returns_all_agents():
             "r3": _a2a_detail("resolution", "agora_resolution", "res_ep"),
         },
     )
-    with patch("boto3.client", return_value=control):
-        result = discover_a2a_agents()
+    registry_module._control = control
+    result = discover_a2a_agents()
 
     assert len(result) == 3
     agent_types = {r["agent_type"] for r in result}
@@ -171,8 +180,8 @@ def test_discover_a2a_agents_excludes_inactive():
         record_details={"r1": _a2a_detail("triage", "agora_triage")},
     )
     # DRAFT は _ACTIVE_STATUSES = {"DRAFT", "APPROVED"} に含まれる
-    with patch("boto3.client", return_value=control):
-        result = discover_a2a_agents()
+    registry_module._control = control
+    result = discover_a2a_agents()
 
     assert len(result) == 1
     assert result[0]["agent_type"] == "triage"

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-
 from client import GitHubIssuesClient
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import TransportSecuritySettings
 from pydantic_settings import BaseSettings
 
 
@@ -24,19 +20,11 @@ def _get_client() -> GitHubIssuesClient:
     return _client
 
 
-@asynccontextmanager
-async def _lifespan(_: FastMCP) -> AsyncGenerator[None, None]:
-    yield
-    if _client is not None:
-        await _client.aclose()
-
-
 mcp = FastMCP(
     "github-issues-mcp",
-    lifespan=_lifespan,
     host="0.0.0.0",
-    port=8080,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    port=8000,
+    stateless_http=True,
 )
 
 

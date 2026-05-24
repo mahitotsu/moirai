@@ -383,6 +383,35 @@ def _register_mcp(control, registry_id: str, server: dict, runtime_arn: str, exi
     logger.info(f"[{name}] Registered as MCP (id={record_id})")
 
 
+def _register_mcp_gateway(control, registry_id: str, gateway_url: str, existing: dict) -> None:
+    name = "agora-mcp-gateway"
+    if name in existing:
+        logger.info(f"[{name}] Already registered — skipping")
+        return
+
+    server_content = {
+        "name": "agora/mcp-gateway",
+        "description": "AgentCore MCP Gateway — aggregated MCP endpoint for all Agora tools",
+        "version": "1.0.0",
+        "url": gateway_url,
+    }
+    resp = control.create_registry_record(
+        registryId=registry_id,
+        name=name,
+        description="AgentCore MCP Gateway URL — agents discover this to access all MCP tools",
+        descriptorType="MCP",
+        descriptors={
+            "mcp": {
+                "server": {"schemaVersion": "2025-12-11", "inlineContent": json.dumps(server_content)},
+                "tools": {"protocolVersion": "2025-11-25", "inlineContent": json.dumps({"tools": []})},
+            }
+        },
+    )
+    record_id = resp["recordArn"].split("/")[-1]
+    _wait_record(control, registry_id, record_id)
+    logger.info(f"[{name}] Registered MCP Gateway URL (id={record_id})")
+
+
 def _register_a2a(control, registry_id: str, agent: dict, runtime_arn: str, existing: dict) -> None:
     name = agent["record_name"]
     if name in existing:
@@ -442,6 +471,7 @@ def handler(event: dict, context: object) -> dict:
 
     # Create or Update: always clear and re-register so ARNs are always current.
     # On Create this also evicts any stale records from manual registration.
+    mcp_gateway_url: str = event.get("ResourceProperties", {}).get("McpGatewayUrl", "")
     runtime_arns = _discover_runtime_arns(control)
     logger.info(f"Discovered {len(runtime_arns)} active runtimes: {list(runtime_arns.keys())}")
 
@@ -452,6 +482,11 @@ def handler(event: dict, context: object) -> dict:
     _delete_all_records(control, registry_id)
 
     existing: dict = {}
+
+    if mcp_gateway_url:
+        _register_mcp_gateway(control, registry_id, mcp_gateway_url, existing)
+    else:
+        logger.warning("McpGatewayUrl not provided — skipping MCP Gateway record")
 
     for server in MCP_CATALOG:
         arn = runtime_arns.get(server["runtime_name"])

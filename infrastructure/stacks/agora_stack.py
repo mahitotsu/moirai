@@ -80,7 +80,6 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
 _CATALOG_VERSION = "8"
-_TARGETS_VERSION = "1"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -164,6 +163,14 @@ _A2A_AGENTS: list[dict] = [
 
 def _logical_id(runtime_name: str) -> str:
     return "".join(part.title() for part in runtime_name.split("_"))
+
+
+def _runtime_invocation_url(runtime: agentcore.CfnRuntime, region: str, account: str) -> str:
+    return (
+        f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/"
+        f"arn%3Aaws%3Abedrock-agentcore%3A{region}%3A{account}%3Aruntime%2F"
+        f"{runtime.attr_agent_runtime_id}/invocations?qualifier=DEFAULT"
+    )
 
 
 class AgoraStack(cdk.Stack):
@@ -951,6 +958,7 @@ class AgoraStack(cdk.Stack):
         # AGENTCORE — MCP サーバー / A2A エージェント
         # =====================================================================
         _mcp_runtimes: dict[str, agentcore.CfnRuntime] = {}
+        _mcp_endpoints: dict[str, agentcore.CfnRuntimeEndpoint] = {}
         for srv in _MCP_SERVERS:
             _extra = _github_env() if srv["name"] == "github-issues" else {}
             env_vars = {k: v for k, v in {**srv["env"], **_extra}.items() if v}
@@ -974,22 +982,23 @@ class AgoraStack(cdk.Stack):
                 tags={"capability": srv["capability"], "project": "agora"},
             )
             _mcp_runtimes[srv["name"]] = runtime
-            agentcore.CfnRuntimeEndpoint(
+            _ep = agentcore.CfnRuntimeEndpoint(
                 self,
                 _logical_id(srv["runtime_name"]) + "Endpoint",
                 agent_runtime_id=runtime.attr_agent_runtime_id,
                 name=f"{srv['runtime_name']}_ep",
                 description=f"Default endpoint for {srv['runtime_name']}",
             )
+            _mcp_endpoints[srv["name"]] = _ep
 
         # =====================================================================
-        # AGENTCORE GATEWAY (HTTP/MCP)
+        # AGENTCORE GATEWAY — MCP (ツール集約)
         # 先に作成することで A2A エージェントが GATEWAY_URL を直接参照できる
         # =====================================================================
         self.agentcore_gateway = agentcore.CfnGateway(
             self,
-            "AgoraGatewayV2",
-            name="agora-gateway-v2",
+            "AgoraGateway",
+            name="agora-gateway",
             description="AgentCore Gateway — semantic MCP tool dispatch for Agora IT Service Desk",
             role_arn=self.gateway_execution_role.role_arn,
             authorizer_type="NONE",
@@ -1011,13 +1020,13 @@ class AgoraStack(cdk.Stack):
         )
 
         # =====================================================================
-        # A2A エージェント — GATEWAY_URL を直接参照 (同スタック内なので循環なし)
+        # A2A → HTTP エージェント — Registry 経由でエンドポイントを発見するため
+        # GATEWAY_URL 環境変数は不要。サブエージェントは HTTP protocol で動作。
         # =====================================================================
         _a2a_runtimes: dict[str, agentcore.CfnRuntime] = {}
+        _a2a_endpoints: dict[str, agentcore.CfnRuntimeEndpoint] = {}
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
-            if agent["name"] in ("diagnosis", "resolution"):
-                env_vars["GATEWAY_URL"] = self.agentcore_gateway.attr_gateway_url
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,
@@ -1033,7 +1042,7 @@ class AgoraStack(cdk.Stack):
                 network_configuration=agentcore.CfnRuntime.NetworkConfigurationProperty(
                     network_mode="PUBLIC",
                 ),
-                protocol_configuration="A2A",
+                protocol_configuration="HTTP",
                 environment_variables=env_vars,
                 tags={
                     "capability": agent["capability"],
@@ -1042,13 +1051,14 @@ class AgoraStack(cdk.Stack):
                 },
             )
             _a2a_runtimes[agent["name"]] = runtime
-            agentcore.CfnRuntimeEndpoint(
+            _ep = agentcore.CfnRuntimeEndpoint(
                 self,
                 _logical_id(agent["runtime_name"]) + "Endpoint",
                 agent_runtime_id=runtime.attr_agent_runtime_id,
                 name=f"{agent['runtime_name']}_ep",
                 description=f"Default endpoint for {agent['runtime_name']}",
             )
+            _a2a_endpoints[agent["name"]] = _ep
 
         # IAM propagation: DefaultPolicy が AgentCore リソース作成前に確実に適用されるよう明示依存
         # CDK は Role の ARN 参照には DependsOn を自動追加するが、
@@ -1180,74 +1190,56 @@ class AgoraStack(cdk.Stack):
             self,
             "RegistryCatalog",
             service_token=registry_provider.service_token,
-            properties={"CatalogVersion": _CATALOG_VERSION},
-        )
-
-        # =====================================================================
-        # GATEWAY MCP TARGETS — Lambda-backed Custom Resource
-        # CDK L1 does not support http.agentcoreRuntime target type; use boto3.
-        # =====================================================================
-        gateway_targets_role = iam.Role(
-            self,
-            "GatewayTargetsRole",
-            role_name="agora-gateway-targets-role",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec],
-        )
-        gateway_targets_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "bedrock-agentcore:CreateGatewayTarget",
-                    "bedrock-agentcore:DeleteGatewayTarget",
-                    "bedrock-agentcore:ListGatewayTargets",
-                    "bedrock-agentcore:GetGatewayTarget",
-                    "bedrock-agentcore:ListAgentRuntimes",
-                    "bedrock-agentcore:GetAgentRuntime",
-                ],
-                resources=["*"],
-            )
-        )
-
-        gateway_targets_fn = lambda_.Function(
-            self,
-            "GatewayTargetsFn",
-            function_name="agora-gateway-targets",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="gateway_mcp_targets_handler.handler",
-            code=lambda_.Code.from_asset(
-                str(_LAMBDA_DIR),
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    local=_LocalPipBundler(_LAMBDA_DIR),
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp -au . /asset-output",
-                    ],
-                ),
-            ),
-            timeout=cdk.Duration.minutes(10),
-            role=gateway_targets_role,
-        )
-
-        # Gateway and all runtimes (MCP + A2A) must exist before target registration
-        gateway_targets_fn.node.add_dependency(self.agentcore_gateway)
-        for runtime in list(_mcp_runtimes.values()) + list(_a2a_runtimes.values()):
-            gateway_targets_fn.node.add_dependency(runtime)
-
-        gateway_targets_provider = cr.Provider(
-            self, "GatewayTargetsProvider", on_event_handler=gateway_targets_fn
-        )
-        cdk.CustomResource(
-            self,
-            "GatewayMcpTargets",
-            service_token=gateway_targets_provider.service_token,
             properties={
-                "GatewayId": self.agentcore_gateway.attr_gateway_identifier,
-                "TargetsVersion": _TARGETS_VERSION,
+                "CatalogVersion": _CATALOG_VERSION,
+                "McpGatewayUrl": self.agentcore_gateway.attr_gateway_url,
             },
         )
+
+        # =====================================================================
+        # GATEWAY MCP TARGETS — CfnGatewayTarget (mcp.mcpServer.endpoint + SigV4)
+        # AgentCore RuntimeでホストされたMCPサーバーをGatewayに登録する。
+        # metadataConfiguration で Mcp-Session-Id ヘッダーを許可し、
+        # SigV4 (GATEWAY_IAM_ROLE) で認証する。
+        # =====================================================================
+        _mcp_metadata = agentcore.CfnGatewayTarget.MetadataConfigurationProperty(
+            allowed_request_headers=["Mcp-Session-Id"],
+            allowed_response_headers=["Mcp-Session-Id"],
+        )
+        _iam_cred = [
+            agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                credential_provider_type="GATEWAY_IAM_ROLE",
+                credential_provider=agentcore.CfnGatewayTarget.CredentialProviderProperty(
+                    iam_credential_provider=agentcore.CfnGatewayTarget.IamCredentialProviderProperty(
+                        service="bedrock-agentcore",
+                        region=self.region,
+                    )
+                ),
+            )
+        ]
+        _GATEWAY_TARGET_SKIP = {"aws-docs", "cloudwatch"}
+        for srv in _MCP_SERVERS:
+            if srv["name"] in _GATEWAY_TARGET_SKIP:
+                continue
+            _runtime = _mcp_runtimes[srv["name"]]
+            _ep = _mcp_endpoints[srv["name"]]
+            _tgt = agentcore.CfnGatewayTarget(
+                self,
+                _logical_id(srv["runtime_name"]) + "GatewayTarget",
+                name=f"agora-{srv['name']}",
+                description=srv["description"],
+                gateway_identifier=self.agentcore_gateway.attr_gateway_identifier,
+                target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                    mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                        mcp_server=agentcore.CfnGatewayTarget.McpServerTargetConfigurationProperty(
+                            endpoint=_runtime_invocation_url(_runtime, self.region, self.account),
+                        )
+                    )
+                ),
+                credential_provider_configurations=_iam_cred,
+                metadata_configuration=_mcp_metadata,
+            )
+            _tgt.node.add_dependency(_ep)
 
         # =====================================================================
         # SSM — チケットサービス URL (FaultInjectionStack が参照)

@@ -1,25 +1,37 @@
 from __future__ import annotations
 
 import json
-import logging
-import sys
+from typing import Any
 
 import boto3
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import TransportSecuritySettings
-
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
 
 mcp = FastMCP(
     "infrastructure-inspector-mcp",
     host="0.0.0.0",
-    port=8080,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    port=8000,
+    stateless_http=True,
 )
 
-_lambda_client = boto3.client("lambda")
-_fis_client = boto3.client("fis")
-_cfn_client = boto3.client("cloudformation")
+_clients: dict[str, Any] = {}
+
+
+def _lambda() -> Any:
+    if "lambda" not in _clients:
+        _clients["lambda"] = boto3.client("lambda")
+    return _clients["lambda"]
+
+
+def _fis() -> Any:
+    if "fis" not in _clients:
+        _clients["fis"] = boto3.client("fis")
+    return _clients["fis"]
+
+
+def _cfn() -> Any:
+    if "cfn" not in _clients:
+        _clients["cfn"] = boto3.client("cloudformation")
+    return _clients["cfn"]
 
 
 @mcp.tool()
@@ -38,11 +50,11 @@ def inspect_lambda(function_name: str) -> str:
         and event source mappings (triggers).
     """
     try:
-        resp = _lambda_client.get_function(FunctionName=function_name)
+        resp = _lambda().get_function(FunctionName=function_name)
         config = resp["Configuration"]
         env_keys = list(config.get("Environment", {}).get("Variables", {}).keys())
 
-        esm_resp = _lambda_client.list_event_source_mappings(FunctionName=function_name)
+        esm_resp = _lambda().list_event_source_mappings(FunctionName=function_name)
         triggers = [
             f"{m.get('EventSourceArn', 'unknown')} (state: {m.get('State', 'unknown')})"
             for m in esm_resp.get("EventSourceMappings", [])
@@ -77,10 +89,11 @@ def list_active_fis_experiments() -> str:
         or a message indicating no experiments are running.
     """
     try:
-        resp = _fis_client.list_experiments(
-            filters=[{"key": "state", "values": ["running"]}]
-        )
-        experiments = resp.get("experiments", [])
+        resp = _fis().list_experiments()
+        experiments = [
+            e for e in resp.get("experiments", [])
+            if e.get("state", {}).get("status") == "running"
+        ]
         if not experiments:
             return "No FIS experiments are currently running."
 
@@ -89,7 +102,7 @@ def list_active_fis_experiments() -> str:
             exp_id = exp.get("id", "unknown")
             template_id = exp.get("experimentTemplateId", "unknown")
 
-            detail_resp = _fis_client.get_experiment(id=exp_id)
+            detail_resp = _fis().get_experiment(id=exp_id)
             detail = detail_resp.get("experiment", {})
             state = detail.get("state", {})
             actions = detail.get("actions", {})
@@ -136,10 +149,10 @@ def describe_cfn_stack(stack_name: str) -> str:
         logical IDs, and physical IDs.
     """
     try:
-        stacks_resp = _cfn_client.describe_stacks(StackName=stack_name)
+        stacks_resp = _cfn().describe_stacks(StackName=stack_name)
         stack = stacks_resp["Stacks"][0]
 
-        resources_resp = _cfn_client.describe_stack_resources(StackName=stack_name)
+        resources_resp = _cfn().describe_stack_resources(StackName=stack_name)
         resources = resources_resp.get("StackResources", [])
 
         lines = [

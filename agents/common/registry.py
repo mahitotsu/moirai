@@ -1,167 +1,177 @@
 """
 AgentCore Registry discovery utility.
 
-Agents use this module to find MCP servers and A2A agents by querying the
-AgentCore Registry ('agora_registry').  Records are stored with proper
-protocol types (MCP / A2A) and carry runtime discovery metadata as
-additional fields in their inline content.
+Agents use this module to find the MCP Gateway URL and A2A agent runtime ARNs
+by querying the AgentCore Registry ('agora_registry').
+
+All lookups are cached at the module level so Registry API calls happen only
+once per container lifetime.
 
 Example:
-    from common.registry import discover_by_capability, discover_a2a_agents
+    from registry import get_mcp_gateway_url, get_agent_runtime_arn
+    from registry import TRIAGE_AGENT_RECORD, DIAGNOSIS_AGENT_RECORD, RESOLUTION_AGENT_RECORD
 
-    runtimes = discover_by_capability("community-knowledge")
-    # [{"name": "agora_stackoverflow", "runtime_arn": "...",
-    #   "runtime_id": "...", "endpoint_id": "...", "endpoint_arn": ""}, ...]
-
-    agents = discover_a2a_agents()
-    # [{"name": "Triage Agent", "agent_type": "triage", "runtime_arn": "...",
-    #   "runtime_id": "...", "endpoint_id": "...", "endpoint_arn": ""}, ...]
+    url = get_mcp_gateway_url()
+    arn = get_agent_runtime_arn(TRIAGE_AGENT_RECORD)
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
 import boto3
+
+logger = logging.getLogger(__name__)
 
 REGISTRY_NAME = "agora_registry"
 _ACTIVE_STATUSES = {"DRAFT", "APPROVED"}
 
+# Registry record names — must match registry_catalog_handler.py
+MCP_GATEWAY_RECORD = "agora-mcp-gateway"
+TRIAGE_AGENT_RECORD = "agora-triage-agent"
+DIAGNOSIS_AGENT_RECORD = "agora-diagnosis-agent"
+RESOLUTION_AGENT_RECORD = "agora-resolution-agent"
 
-def _find_registry_id(control) -> str | None:
-    resp = control.list_registries()
-    for reg in resp.get("registries", []):
-        if reg["name"] == REGISTRY_NAME and reg["status"] == "READY":
-            return reg["registryId"]
-    return None
+_control = boto3.client("bedrock-agentcore-control")
+
+# Module-level cache: persists across invocations in the same container.
+_cache: dict[str, object] = {}
 
 
-def _list_all_records(control, registry_id: str, descriptor_type: str) -> list[dict]:
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _registry_id() -> str:
+    if "_registry_id" not in _cache:
+        resp = _control.list_registries()
+        for reg in resp.get("registries", []):
+            if reg["name"] == REGISTRY_NAME and reg["status"] == "READY":
+                _cache["_registry_id"] = reg["registryId"]
+                return _cache["_registry_id"]  # type: ignore[return-value]
+        raise RuntimeError(f"Registry '{REGISTRY_NAME}' not found or not READY")
+    return _cache["_registry_id"]  # type: ignore[return-value]
+
+
+def _list_all_records(descriptor_type: str) -> list[dict]:
+    registry_id = _registry_id()
     records: list[dict] = []
     kwargs: dict = {"registryId": registry_id, "descriptorType": descriptor_type}
     while True:
-        resp = control.list_registry_records(**kwargs)
+        resp = _control.list_registry_records(**kwargs)
         records.extend(resp.get("registryRecords", []))
         token = resp.get("nextToken")
         if not token:
             break
-        kwargs = {"registryId": registry_id, "descriptorType": descriptor_type, "nextToken": token}
+        kwargs["nextToken"] = token
     return records
 
 
-def _parse_mcp_server_content(control, registry_id: str, record: dict) -> dict | None:
-    """Fetch full MCP record and parse server inlineContent."""
+def _get_mcp_inline(record: dict) -> dict | None:
     try:
-        detail = control.get_registry_record(
-            registryId=registry_id, recordId=record["recordId"]
+        detail = _control.get_registry_record(
+            registryId=_registry_id(), recordId=record["recordId"]
         )
-        raw = (
-            detail.get("descriptors", {})
-            .get("mcp", {})
-            .get("server", {})
-            .get("inlineContent", "{}")
-        )
+        descriptors = detail.get("descriptors", {})
+        raw = descriptors.get("mcp", {}).get("server", {}).get("inlineContent", "{}")
         return json.loads(raw)
     except Exception:
         return None
 
 
-def _parse_a2a_card_content(control, registry_id: str, record: dict) -> dict | None:
-    """Fetch full A2A record and parse agentCard inlineContent."""
+def _get_a2a_inline(record: dict) -> dict | None:
     try:
-        detail = control.get_registry_record(
-            registryId=registry_id, recordId=record["recordId"]
+        detail = _control.get_registry_record(
+            registryId=_registry_id(), recordId=record["recordId"]
         )
-        raw = (
-            detail.get("descriptors", {})
-            .get("a2a", {})
-            .get("agentCard", {})
-            .get("inlineContent", "{}")
-        )
+        descriptors = detail.get("descriptors", {})
+        raw = descriptors.get("a2a", {}).get("agentCard", {}).get("inlineContent", "{}")
         return json.loads(raw)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def get_mcp_gateway_url() -> str:
+    """Return the MCP Gateway URL. Fetches from Registry on first call, then cached."""
+    cache_key = "mcp_gateway_url"
+    if cache_key not in _cache:
+        for rec in _list_all_records("MCP"):
+            if rec["name"] == MCP_GATEWAY_RECORD:
+                content = _get_mcp_inline(rec)
+                if content:
+                    url = content.get("url", "")
+                    if url:
+                        _cache[cache_key] = url
+                        logger.info("Discovered MCP Gateway URL from Registry")
+                        return url  # type: ignore[return-value]
+        raise RuntimeError(f"Registry record '{MCP_GATEWAY_RECORD}' not found or URL missing")
+    return _cache[cache_key]  # type: ignore[return-value]
+
+
+def get_agent_runtime_arn(record_name: str) -> str:
+    """Return the runtimeArn for a registered agent. Fetches from Registry on first call."""
+    cache_key = f"arn:{record_name}"
+    if cache_key not in _cache:
+        for rec in _list_all_records("A2A"):
+            if rec["name"] == record_name:
+                content = _get_a2a_inline(rec)
+                if content:
+                    arn = content.get("runtimeArn", "")
+                    if arn:
+                        _cache[cache_key] = arn
+                        logger.info("Discovered runtime ARN for '%s' from Registry", record_name)
+                        return arn  # type: ignore[return-value]
+        raise RuntimeError(f"Registry record '{record_name}' not found or runtimeArn missing")
+    return _cache[cache_key]  # type: ignore[return-value]
 
 
 def discover_by_capability(capability: str) -> list[dict]:
-    """Return all MCP servers in the Registry tagged with the given capability.
+    """Return all MCP servers tagged with the given capability.
 
-    Each entry:
-        name          : str — agentRuntimeName (key for _MCP_TOOL_MAP in tools.py)
-        runtime_arn   : str — used for invoke_agent_runtime
-        runtime_id    : str — runtime ID parsed from ARN
-        endpoint_id   : str — endpoint name
-        endpoint_arn  : str — empty (not stored; endpoint is addressed by name)
+    Each entry has: name, runtime_arn, runtime_id, endpoint_id.
     """
-    control = boto3.client("bedrock-agentcore-control")
-
-    registry_id = _find_registry_id(control)
-    if not registry_id:
-        return []
-
-    records = _list_all_records(control, registry_id, "MCP")
     results: list[dict] = []
-
-    for rec in records:
+    for rec in _list_all_records("MCP"):
         if rec.get("status") not in _ACTIVE_STATUSES:
             continue
-        content = _parse_mcp_server_content(control, registry_id, rec)
-        if not content:
-            continue
-        if content.get("capability") != capability:
+        content = _get_mcp_inline(rec)
+        if not content or content.get("capability") != capability:
             continue
         runtime_arn = content.get("runtimeArn", "")
-        results.append(
-            {
-                "name": content.get("runtimeName", rec["name"]),
-                "runtime_arn": runtime_arn,
-                "runtime_id": runtime_arn.split("/")[-1] if runtime_arn else "",
-                "endpoint_id": content.get("endpointId", ""),
-                "endpoint_arn": "",
-            }
-        )
-
+        results.append({
+            "name": content.get("runtimeName", rec["name"]),
+            "runtime_arn": runtime_arn,
+            "runtime_id": runtime_arn.split("/")[-1] if runtime_arn else "",
+            "endpoint_id": content.get("endpointId", ""),
+        })
     return results
 
 
 def discover_a2a_agents() -> list[dict]:
-    """Return all A2A agents in the Registry with capability='a2a-agent'.
+    """Return all A2A agents with capability='a2a-agent'.
 
-    Each entry:
-        name          : str — agent display name
-        agent_type    : str — 'triage' | 'diagnosis' | 'resolution'
-        runtime_arn   : str
-        runtime_id    : str
-        endpoint_id   : str
-        endpoint_arn  : str
+    Each entry has: name, agent_type, runtime_arn, runtime_id, endpoint_id.
     """
-    control = boto3.client("bedrock-agentcore-control")
-
-    registry_id = _find_registry_id(control)
-    if not registry_id:
-        return []
-
-    records = _list_all_records(control, registry_id, "A2A")
     results: list[dict] = []
-
-    for rec in records:
+    for rec in _list_all_records("A2A"):
         if rec.get("status") not in _ACTIVE_STATUSES:
             continue
-        content = _parse_a2a_card_content(control, registry_id, rec)
-        if not content:
-            continue
-        if content.get("capability") != "a2a-agent":
+        content = _get_a2a_inline(rec)
+        if not content or content.get("capability") != "a2a-agent":
             continue
         runtime_arn = content.get("runtimeArn", "")
-        results.append(
-            {
-                "name": content.get("name", rec["name"]),
-                "agent_type": content.get("agentType", "unknown"),
-                "runtime_arn": runtime_arn,
-                "runtime_id": runtime_arn.split("/")[-1] if runtime_arn else "",
-                "endpoint_id": content.get("endpointId", ""),
-                "endpoint_arn": "",
-            }
-        )
-
+        results.append({
+            "name": content.get("name", rec["name"]),
+            "agent_type": content.get("agentType", "unknown"),
+            "runtime_arn": runtime_arn,
+            "runtime_id": runtime_arn.split("/")[-1] if runtime_arn else "",
+            "endpoint_id": content.get("endpointId", ""),
+        })
     return results

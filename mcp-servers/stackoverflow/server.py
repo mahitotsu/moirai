@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import logging
 import re
-import sys
 
 from client import StackOverflowClient
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import TransportSecuritySettings
-
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, force=True)
 
 mcp = FastMCP(
     "stackoverflow-mcp",
     host="0.0.0.0",
-    port=8080,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    port=8000,
+    stateless_http=True,
 )
 _client: StackOverflowClient | None = None
 

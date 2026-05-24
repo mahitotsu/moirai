@@ -6,7 +6,9 @@ import sys
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
-os.environ.setdefault("GATEWAY_URL", "http://localhost:8080")
+
+# registry モジュールは Registry API が必要なため、テストではスタブ化する
+sys.modules.setdefault("registry", MagicMock())
 
 _spec = importlib.util.spec_from_file_location(
     "resolution_agent", os.path.join(os.path.dirname(__file__), "..", "agent.py")
@@ -18,8 +20,8 @@ sys.modules["resolution_agent"] = _mod
 agent = _mod
 
 
-def test_settings_gateway_url_loaded() -> None:
-    assert agent._settings.gateway_url == "http://localhost:8080"
+def test_settings_load_defaults() -> None:
+    assert "sonnet" in agent._settings.model_id or "claude" in agent._settings.model_id
 
 
 def test_system_prompt_is_non_empty() -> None:

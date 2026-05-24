@@ -20,6 +20,10 @@ with patch("boto3.client", side_effect=_make_boto3):
     import server as _infra_server  # noqa: E402
 
 server = _infra_server
+# Pre-populate the lazy client cache so mocks are returned on every call
+server._clients["lambda"] = _mock_lambda
+server._clients["fis"] = _mock_fis
+server._clients["cfn"] = _mock_cfn
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +94,7 @@ def test_list_active_fis_experiments_returns_none_running() -> None:
 
 def test_list_active_fis_experiments_returns_details() -> None:
     _mock_fis.list_experiments.return_value = {
-        "experiments": [{"id": "exp-abc123", "experimentTemplateId": "EXTabc"}]
+        "experiments": [{"id": "exp-abc123", "experimentTemplateId": "EXTabc", "state": {"status": "running"}}]
     }
     _mock_fis.get_experiment.return_value = {
         "experiment": {

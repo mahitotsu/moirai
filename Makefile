@@ -20,7 +20,7 @@ _MONITORING_STACK := FaultInjectionStack
 #
 # Observability セットアップ (V3, アカウントごとに1回・冪等):
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-start demo-inject demo-stop
+        demo-start demo-inject demo-stop qemu-setup
 
 test:
 	@failed=0; \
@@ -47,7 +47,7 @@ lint:
 	done; \
 	[ "$$found" -eq 1 ] || echo "mypy: no Python files yet — skipped"
 
-build:
+build: qemu-setup
 	@if [ -f services/$(img)/pyproject.toml ]; then \
 	  uv export --package $(img) --no-dev --no-hashes -o services/$(img)/requirements.txt; \
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f services/$(img)/Dockerfile services/$(img); \
@@ -59,13 +59,21 @@ build:
 	  docker build --platform linux/arm64 --provenance=false -t agora-$(img):latest -f mcp-servers/$(img)/Dockerfile mcp-servers/$(img); \
 	fi
 
+qemu-setup:
+	@if grep -q enabled /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null; then \
+	  echo "==> QEMU arm64 already registered."; \
+	else \
+	  echo "==> Registering QEMU binfmt handlers for arm64..."; \
+	  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes; \
+	fi
+
 cdk-diff:
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk diff
 
 cdk-synth:
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk synth
 
-cdk-deploy:
+cdk-deploy: qemu-setup
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk deploy --all --require-approval never
 
 gen-specs:

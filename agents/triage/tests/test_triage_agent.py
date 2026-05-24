@@ -18,7 +18,7 @@ agent = _mod
 
 
 def test_settings_load_defaults() -> None:
-    assert "haiku" in agent.MODEL_ID or "claude" in agent.MODEL_ID
+    assert "haiku" in agent._settings.model_id or "claude" in agent._settings.model_id
 
 
 def test_system_prompt_is_non_empty() -> None:
