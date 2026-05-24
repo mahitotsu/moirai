@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V4 完了  
-**次のタスク**: 次のマイルストーンを検討中
+**フェーズ**: V4 完了・スコープ整理済み  
+**次のタスク**: CONCEPT.md / BACKLOG.md のスコープ記述を整理し直す（Reports/Analysis を除外した状態に合わせる）
 
 ---
 
@@ -67,19 +67,13 @@
   - Dockerfile CMD を `opentelemetry-instrument python agent.py` に変更 (ADOT自動計装)
   - 全エージェントロール・MCPロールに X-Ray 送信権限を追加 (CDK)
   - `make obs-setup` ターゲット追加 (CloudWatch Transaction Search 一回限りのアカウント設定)
-- [x] 21. Cost Explorer MCP デプロイ・Registry登録 (Bedrock利用コスト分析)
-  - `awslabs.billing-cost-management-mcp-server` を採用（旧 `awslabs-cost-explorer-mcp-server` は yanked）
-  - `mcp-servers/cost-explorer/` 作成・ECR プッシュ・`AgoraCostExplorerRuntime` & Endpoint 作成
-  - `mcp_runtime_role` に CE / Budgets / FreeTier / CostOptimizationHub 権限を追加
-  - Registry CatalogVersion を 4 にバンプして再登録
-- [x] 22. Analysis Agent 実装・デプロイ
-  - `agents/analysis/` 作成: Strands A2A + boto3 tools (get_ticket_stats, get_lambda_error_metrics, get_bedrock_costs, save_report)
-  - `services/reports-service/` 作成: FastAPI (GET/POST /reports)、`agora-reports` DynamoDB テーブル追加
-  - Gateway Agent に `run_analysis` ツール追加・system_prompt 更新
-  - CDK: agora-reports テーブル / ReportsServiceFn / AgoraAnalysisRuntime / CloudFront `/api/reports*` / CatalogVersion→5
+- [x] 21. Cost Explorer MCP デプロイ・Registry登録 ※後にスコープ外へ除外 → ea1220f で削除
+- [x] 22. Analysis Agent 実装・デプロイ ※後にスコープ外へ除外 → ea1220f で削除
+  - Analysis Agent・Reports Service・agora-reports テーブル・CloudFront `/api/reports*`・UI Reports タブを全削除
+  - デモのメインストーリーと切れており、コンテンツも CloudWatch 等で代替可能なため除外
 - [x] 23. AgentCore Evaluations 設定 ※スコープ外へ除外 → CDK/Makefile/scripts/eval_setup.py から削除済み
-  - ADOT→X-Ray転送のサイレント失敗により OnlineEvaluationConfig が作成不可のまま解決の目処が立たないためデモスコープから除外
-- [x] 24. React UI Reports タブ追加
+  - ADOT→X-Ray転送のサイレント失敗により OnlineEvaluationConfig が作成不可のため除外
+- [x] 24. React UI Reports タブ追加 ※後にスコープ外へ除外 → ea1220f で削除
 
 ## V4: 進化する
 
