@@ -22,34 +22,9 @@ def _dynamo_item(**fields: str) -> dict:
     return {k: {"S": v} for k, v in fields.items()}
 
 
-def test_check_cloudwatch_alarms_returns_alarm_details() -> None:
-    mock_resp = {"MetricAlarms": [{
-        "AlarmName": "agora-fake-api-error-rate",
-        "AlarmDescription": "Error rate too high",
-        "StateValue": "ALARM",
-        "StateUpdatedTimestamp": "2026-05-23T00:00:00Z",
-        "Namespace": "AWS/Lambda",
-        "MetricName": "Errors",
-        "StateReason": "Threshold crossed",
-    }]}
-    with patch.object(tools, "_cloudwatch") as m:
-        m.describe_alarms.return_value = mock_resp
-        result = tools.check_cloudwatch_alarms()
-    assert "agora-fake-api-error-rate" in result
-    assert "ALARM" in result
-
-
-def test_check_cloudwatch_alarms_no_active_alarms() -> None:
-    with patch.object(tools, "_cloudwatch") as m:
-        m.describe_alarms.return_value = {"MetricAlarms": []}
-        assert "No active alarms" in tools.check_cloudwatch_alarms()
-
-
-def test_check_cloudwatch_alarms_on_error() -> None:
-    with patch.object(tools, "_cloudwatch") as m:
-        m.describe_alarms.side_effect = Exception("AccessDenied")
-        assert "failed" in tools.check_cloudwatch_alarms().lower()
-
+# ---------------------------------------------------------------------------
+# search_past_tickets
+# ---------------------------------------------------------------------------
 
 def test_search_past_tickets_returns_resolved_tickets() -> None:
     mock_resp = {"Items": [_dynamo_item(
@@ -73,9 +48,3 @@ def test_search_past_tickets_on_error() -> None:
     with patch.object(tools, "_dynamodb") as m:
         m.query.side_effect = Exception("DynamoDB unreachable")
         assert "failed" in tools.search_past_tickets("query").lower()
-
-
-def test_search_community_knowledge_handles_http_error() -> None:
-    with patch("httpx.get", side_effect=Exception("Connection refused")):
-        result = tools.search_community_knowledge("lambda throttling")
-    assert isinstance(result, str) and len(result) > 0

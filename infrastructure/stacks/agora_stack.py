@@ -79,7 +79,8 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "7"
+_CATALOG_VERSION = "8"
+_TARGETS_VERSION = "1"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -987,12 +988,25 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         self.agentcore_gateway = agentcore.CfnGateway(
             self,
-            "AgoraGateway",
-            name="agora-gateway",
-            description="AgentCore Gateway that exposes Agora internal services as MCP tools",
+            "AgoraGatewayV2",
+            name="agora-gateway-v2",
+            description="AgentCore Gateway — semantic MCP tool dispatch for Agora IT Service Desk",
             role_arn=self.gateway_execution_role.role_arn,
             authorizer_type="NONE",
             protocol_type="MCP",
+            protocol_configuration=agentcore.CfnGateway.GatewayProtocolConfigurationProperty(
+                mcp=agentcore.CfnGateway.MCPGatewayConfigurationProperty(
+                    search_type="SEMANTIC",
+                    instructions=(
+                        "Agora IT Service Desk gateway. "
+                        "Tools: ticket management (create, list, update), "
+                        "community knowledge search (Stack Overflow, GitHub Issues, AWS Docs), "
+                        "infrastructure inspection (Lambda config, active FIS experiments, "
+                        "CloudFormation stacks), "
+                        "CloudWatch observability (active alarms, metrics, Logs Insights queries)."
+                    ),
+                )
+            ),
             tags={"project": "agora"},
         )
 
@@ -1167,6 +1181,72 @@ class AgoraStack(cdk.Stack):
             "RegistryCatalog",
             service_token=registry_provider.service_token,
             properties={"CatalogVersion": _CATALOG_VERSION},
+        )
+
+        # =====================================================================
+        # GATEWAY MCP TARGETS — Lambda-backed Custom Resource
+        # CDK L1 does not support http.agentcoreRuntime target type; use boto3.
+        # =====================================================================
+        gateway_targets_role = iam.Role(
+            self,
+            "GatewayTargetsRole",
+            role_name="agora-gateway-targets-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[_basic_exec],
+        )
+        gateway_targets_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:CreateGatewayTarget",
+                    "bedrock-agentcore:DeleteGatewayTarget",
+                    "bedrock-agentcore:ListGatewayTargets",
+                    "bedrock-agentcore:GetGatewayTarget",
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:GetAgentRuntime",
+                ],
+                resources=["*"],
+            )
+        )
+
+        gateway_targets_fn = lambda_.Function(
+            self,
+            "GatewayTargetsFn",
+            function_name="agora-gateway-targets",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="gateway_mcp_targets_handler.handler",
+            code=lambda_.Code.from_asset(
+                str(_LAMBDA_DIR),
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    local=_LocalPipBundler(_LAMBDA_DIR),
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output --quiet"
+                        " && cp -au . /asset-output",
+                    ],
+                ),
+            ),
+            timeout=cdk.Duration.minutes(10),
+            role=gateway_targets_role,
+        )
+
+        # Gateway and all runtimes (MCP + A2A) must exist before target registration
+        gateway_targets_fn.node.add_dependency(self.agentcore_gateway)
+        for runtime in list(_mcp_runtimes.values()) + list(_a2a_runtimes.values()):
+            gateway_targets_fn.node.add_dependency(runtime)
+
+        gateway_targets_provider = cr.Provider(
+            self, "GatewayTargetsProvider", on_event_handler=gateway_targets_fn
+        )
+        cdk.CustomResource(
+            self,
+            "GatewayMcpTargets",
+            service_token=gateway_targets_provider.service_token,
+            properties={
+                "GatewayId": self.agentcore_gateway.attr_gateway_identifier,
+                "TargetsVersion": _TARGETS_VERSION,
+            },
         )
 
         # =====================================================================

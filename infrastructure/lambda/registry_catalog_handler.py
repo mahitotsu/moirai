@@ -81,42 +81,6 @@ MCP_CATALOG: list[dict] = [
         ],
     },
     {
-        "record_name": "agora-wikipedia",
-        "runtime_name": "agora_wikipedia",
-        "endpoint_id": "agora_wikipedia_ep",
-        "capability": "community-knowledge",
-        "server_json": {
-            "name": "agora/wikipedia-mcp",
-            "description": "Search Wikipedia articles for technology concepts and general knowledge",
-            "version": "1.0.0",
-        },
-        "tools": [
-            {
-                "name": "search_wikipedia",
-                "description": "Search Wikipedia for articles related to a topic or technology concept.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The topic or concept to search for."},
-                        "num_results": {"type": "integer", "description": "Number of articles to return (default 5, max 10)."},
-                    },
-                    "required": ["query"],
-                },
-            },
-            {
-                "name": "get_wikipedia_article",
-                "description": "Retrieve a summary of a specific Wikipedia article by its exact title.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "The exact title of the Wikipedia article."},
-                    },
-                    "required": ["title"],
-                },
-            },
-        ],
-    },
-    {
         "record_name": "agora-aws-docs",
         "runtime_name": "agora_aws_docs",
         "endpoint_id": "agora_aws_docs_ep",
@@ -191,6 +155,50 @@ MCP_CATALOG: list[dict] = [
                         "limit": {"type": "integer", "description": "Maximum number of log records to return (default 100)."},
                     },
                     "required": ["log_group_names", "query_string"],
+                },
+            },
+        ],
+    },
+    {
+        "record_name": "agora-infrastructure-inspector",
+        "runtime_name": "agora_infrastructure_inspector",
+        "endpoint_id": "agora_infrastructure_inspector_ep",
+        "capability": "aws-infrastructure",
+        "server_json": {
+            "name": "agora/infrastructure-inspector-mcp",
+            "description": "Infrastructure Inspector MCP — inspects Lambda, FIS experiments, and CloudFormation stacks",
+            "version": "1.0.0",
+        },
+        "tools": [
+            {
+                "name": "list_active_fis_experiments",
+                "description": "List all currently running AWS FIS (Fault Injection Simulator) experiments.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+            {
+                "name": "inspect_lambda",
+                "description": "Inspect the configuration of an AWS Lambda function (concurrency, environment, timeout, etc.).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "function_name": {"type": "string", "description": "The name or ARN of the Lambda function to inspect."},
+                    },
+                    "required": ["function_name"],
+                },
+            },
+            {
+                "name": "describe_cloudformation_stack",
+                "description": "Describe the resources and status of a CloudFormation stack.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "stack_name": {"type": "string", "description": "The name of the CloudFormation stack."},
+                    },
+                    "required": ["stack_name"],
                 },
             },
         ],

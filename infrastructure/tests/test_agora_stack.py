@@ -107,10 +107,11 @@ def test_lambda_function_count(template: Template) -> None:
         "AWS::Lambda::Function",
         props=Match.object_like({}),
     )
-    # ticket + chat-proxy + ticket-dispatcher + knowledge-consumer + registry-catalog
-    # BucketDeployment内部Lambda群 (Custom::CDKBucketDeployment) を除いた数
+    # ticket + chat-proxy + ticket-dispatcher + knowledge-consumer
+    # + registry-catalog + gateway-targets
+    # (BucketDeployment 内部 Lambda 群を除いた数)
     named_fns = [
         r for r in resources.values()
         if r.get("Properties", {}).get("FunctionName", "").startswith("agora-")
     ]
-    assert len(named_fns) == 5, f"agora- Lambda 数が変わっています: {len(named_fns)}"
+    assert len(named_fns) == 6, f"agora- Lambda 数が変わっています: {len(named_fns)}"
