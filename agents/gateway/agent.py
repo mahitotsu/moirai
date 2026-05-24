@@ -7,7 +7,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from pydantic_settings import BaseSettings
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
-from tools import run_analysis, run_diagnosis, run_resolution, run_triage
+from tools import run_diagnosis, run_resolution, run_triage
 
 
 class _Settings(BaseSettings):
@@ -38,7 +38,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
     agent = Agent(
         model=BedrockModel(**model_kwargs),
         system_prompt=_SYSTEM_PROMPT,
-        tools=[run_triage, run_diagnosis, run_resolution, run_analysis],
+        tools=[run_triage, run_diagnosis, run_resolution],
     )
     result = agent(prompt)
     return {"response": str(result)}

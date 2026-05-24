@@ -21,7 +21,7 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 単一の巨大エージェントは避ける。Triage・Diagnosis・Resolutionのように責務を明確に分割し、各エージェントが独立して開発・デプロイ・スケールできる構成にする。
 
 ### 3. 既存サービスのAPI契約を維持する
-内部サービス（Ticket Service / Asset Service）はREST APIとして公開し続ける。エージェントはGateway経由でMCPツールとして利用し、UIはREST APIを直接呼び出す。APIの公開契約はエージェント導入後も変わらない。
+内部サービス（Ticket Service）はREST APIとして公開し続ける。エージェントはGateway経由でMCPツールとして利用し、UIはREST APIを直接呼び出す。APIの公開契約はエージェント導入後も変わらない。
 
 ### 4. ビジネスルールとコードの分離
 各エージェントのSystem Promptを独立したファイルとして管理する。モデルの変更や業務ルールの更新をコードの変更なしに行える構造にする。
@@ -30,7 +30,7 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
 エージェントはMCPサーバーのエンドポイントをハードコードしない。AgentCore RegistryにCapabilityタグを付けて登録し、エージェントは「community-knowledge能力を持つサービス」という形で動的に発見・呼び出す。
 
 ### 6. 業務データとエージェント文脈の分離
-インシデント履歴などの業務データはTicket Service（DynamoDB）をSystem of Recordとして管理する。AgentCore Memoryは会話の継続性とユーザー固有の傾向の記憶に限定し、責務を混在させない。
+インシデント履歴などの業務データはTicket Service（DynamoDB）をSystem of Recordとして管理する。エージェントはDynamoDBを検索ツール経由で参照するが、書き込みはTicket Serviceを通じてのみ行い、責務を混在させない。
 
 ---
 
@@ -100,15 +100,9 @@ Chat タブは以下の2点に絞ってデモ価値を持たせる。
 - 実システムへの変更実行（Lambda再起動・設定変更など）
 - FIS実験の操作（障害注入の開始・停止）
 
-### V3: 見える
+### V3: 見える（スコープ外）
 
-```
-Analysis Agent が起動
-→ CloudWatch MCP : エージェント稼働メトリクスを取得
-→ Cost Explorer MCP: Bedrock 利用コストを取得
-→ Ticket Service : インシデント傾向を集計
-→ レポートを DynamoDB に保存 → Reports 画面に表示
-```
+Analysis Agent / Cost Explorer MCP / Reports Service / AgentCore Evaluations はデモのメインストーリーと切れており、コスト対効果が低いためスコープから除外した。AgentCore Observability（OTEL計装）のみ実装済み。
 
 ### V4: 進化する
 
@@ -146,10 +140,9 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 └─────────────────────────────────────────────────────┘
 
 [React UI]
-  ├── Chat タブ ────────── AG-UI (HTTP POST) でアドホック質問・応答受信
-  ├── Tickets タブ ──────── Ticket Service REST API 直接
-  ├── Knowledge タブ ────── Ticket Service REST API 直接
-  └── Reports タブ (V3) ─── Reports Service REST API 直接
+  ├── Chat タブ ────── AG-UI (HTTP POST) でアドホック質問・応答受信
+  ├── Tickets タブ ─── Ticket Service REST API 直接
+  └── Knowledge タブ ─ Ticket Service REST API 直接
 
       ↕ AG-UI (HTTP POST)
 
@@ -161,8 +154,6 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 │   Triage Agent          インシデント分類・重大度判定  │
 │   Diagnosis Agent       知識検索・類似事例照合        │
 │   Resolution Agent      解決提案の生成               │
-│   Analysis Agent (V3)   稼働レポート・傾向分析        │
-│   (V4 は stream consumer Lambda のみ追加)             │
 └─────────────────────────────────────────────────────┘
       ↕ AgentCore Registry 経由で capability 検索・呼び出し
 
@@ -170,21 +161,22 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 │ Community Knowledge MCP群   AgentCore Runtime / MCP  │
 │   Stack Overflow MCP (自作)  Stack Exchange API      │
 │   GitHub Issues MCP  (自作)  GitHub Search API       │
-│   Wikipedia MCP      (自作)  Wikipedia API           │
 │   AWS Docs MCP    (awslabs)  aws-documentation-mcp   │
 │   capability: "community-knowledge"                  │
 ├─────────────────────────────────────────────────────┤
-│ AWS Observability MCP群 (V3) AgentCore Runtime / MCP │
+│ AWS Observability MCP群     AgentCore Runtime / MCP  │
 │   CloudWatch MCP  (awslabs)  cloudwatch-mcp-server   │
-│   Cost Explorer MCP(awslabs) cost-explorer-mcp       │
 │   capability: "aws-observability"                    │
+├─────────────────────────────────────────────────────┤
+│ AWS Infrastructure MCP群    AgentCore Runtime / MCP  │
+│   Infrastructure Inspector (自作) Lambda/FIS/CFn     │
+│   capability: "aws-infrastructure"                   │
 └─────────────────────────────────────────────────────┘
       ↕ AgentCore Gateway 経由 (OpenAPI → MCP変換)
 
 ┌─────────────────────────────────────────────────────┐
 │ 内部サービス群              FastAPI / DynamoDB        │
 │   Ticket Service    インシデント管理 (System of Record)│
-│   Asset Service     構成管理DB                       │
 └─────────────────────────────────────────────────────┘
 
       ↕ DynamoDB Streams (V4)
@@ -198,9 +190,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 
 横断サービス:
   AgentCore Registry      capability ベースの動的発見
-  AgentCore Memory        会話の文脈・ユーザー固有の傾向
-  AgentCore Evaluations   解決提案の品質スコアリング (V3)
-  AgentCore Observability OTEL トレーシング → CloudWatch (V3)
+  AgentCore Observability OTEL トレーシング → CloudWatch
 ```
 
 ---
@@ -215,7 +205,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 | Gateway | 内部サービスをMCPツール化 | 既存REST APIを変更せずエージェントから利用可能にする |
 | Registry | capabilityベースの動的発見 | エージェントがサービスのエンドポイントをハードコードしない |
 | Memory | (スコープ外) | デモシナリオに対してコスト対効果が低いため除外 |
-| Policy (V2) | エージェント間のツールアクセスをCedarポリシーで制御 | 責務分割をコードではなくインフラレベルで強制。Triage/Diagnosis は読み取り専用、Resolution のみ書き込み許可 |
+| Policy | (スコープ外) | Cedar Policy Engine を LOG_ONLY モードで設定したが可視効果がないため除外 |
 | Evaluations | (スコープ外) | ADOT→X-Ray転送のサイレント失敗により動作不可のため除外 |
 | Observability (V3) | OTELによるエンドツーエンドトレーシング | Bridge Lambda → エージェント間の処理フローをCloudWatchで可視化 |
 
@@ -268,9 +258,8 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 | サービス | 役割 | データストア |
 |---|---|---|
 | Ticket Service | インシデントのSystem of Record。チケット作成・更新・検索 | DynamoDB |
-| Asset Service | 構成管理DB。サーバー・サービスの資産情報 | DynamoDB |
 
-> **設計上の重要な区別**: インシデント履歴はTicket Service（DynamoDB）に記録する。AgentCore Memoryはエージェントの会話文脈とユーザー固有の傾向記憶に限定し、業務データとの責務を混在させない。
+> **設計上の重要な区別**: インシデント履歴はTicket Service（DynamoDB）に記録する。エージェントはAgentCore Gateway経由でTicket ServiceのREST APIをMCPツールとして利用し、UIは同じREST APIを直接呼び出す。エージェント導入後もAPIの公開契約は変わらない。
 
 ### Community Knowledge MCP群
 
@@ -278,15 +267,19 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 |---|---|---|---|
 | Stack Overflow MCP | Stack Exchange API | 不要 | 自作 (FastMCP) |
 | GitHub Issues MCP | GitHub Search API | 不要（公開リポジトリ） | 自作 (FastMCP) |
-| Wikipedia MCP | Wikipedia REST API | 不要 | 自作 (FastMCP) |
 | AWS Docs MCP | — | — | awslabs/mcp 流用 |
 
 ### AWS Observability MCP群
 
-| MCP | 用途 | 実装 | フェーズ |
-|---|---|---|---|
-| CloudWatch MCP | Diagnosis Agent が障害メトリクス・ログを参照 | awslabs/mcp 流用 | V2 |
-| Cost Explorer MCP | Bedrock利用コスト分析 | awslabs/mcp 流用 | V3 |
+| MCP | 用途 | 実装 |
+|---|---|---|
+| CloudWatch MCP | Diagnosis Agent が障害メトリクス・ログを参照 | awslabs/mcp 流用 |
+
+### AWS Infrastructure MCP群
+
+| MCP | 用途 | 実装 |
+|---|---|---|
+| Infrastructure Inspector MCP | Diagnosis Agent が Lambda/FIS/CloudFormation の状態を調査 | 自作 (FastMCP) |
 
 ### DynamoDB Streams 知識進化レイヤー（V4）
 
@@ -300,14 +293,13 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 ### React シングルページアプリ
 
-| タブ | 内容 | データ取得方法 | フェーズ |
-|---|---|---|---|
-| Chat | チケット×Knowledge 横断クエリ・Guardrails 実演（禁止操作ブロック） | AG-UI / HTTP POST（エージェント経由） | V1 |
-| Tickets | 自動起票されたインシデント一覧・詳細・診断結果 | Ticket Service REST API 直接 | V1 |
-| Knowledge | 解決済みパターンのブラウズ | Ticket Service REST API 直接 | V1 |
-| Reports | Analysis Agentの稼働レポート | Reports API 直接 | V3 |
+| タブ | 内容 | データ取得方法 |
+|---|---|---|
+| Chat | チケット×Knowledge 横断クエリ・Guardrails 実演（禁止操作ブロック） | AG-UI / HTTP POST（エージェント経由） |
+| Tickets | 自動起票されたインシデント一覧・詳細・診断結果 | Ticket Service REST API 直接 |
+| Knowledge | 解決済みパターンのブラウズ | Ticket Service REST API 直接 |
 
-> Browse系タブ（Tickets / Knowledge / Reports）はエージェントを経由せず各サービスのREST APIを直接呼び出す。これによりエージェント導入後もAPIの公開契約が維持されていることをUIレベルでも実証する。
+> Browse系タブ（Tickets / Knowledge）はエージェントを経由せず Ticket Service の REST API を直接呼び出す。これによりエージェント導入後もAPIの公開契約が維持されていることをUIレベルでも実証する。
 
 ---
 
@@ -316,14 +308,14 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 | レイヤー | 技術 |
 |---|---|
 | 言語 | Python 3.12+ |
-| エージェントロジック | boto3 (Bedrock Converse API) + FastAPI |
+| エージェントロジック | Strands SDK + boto3 |
 | MCPサーバー | FastMCP (mcp.server.fastmcp) |
 | コンテナ | ARM64 Docker → ECR → AgentCore Runtime |
 | フロントエンド | React |
-| データストア | DynamoDB（Ticket / Asset / Reports / Knowledge） |
+| データストア | DynamoDB（Tickets / Knowledge） |
 | 監視対象システム | Lambda (EC2 DescribeInstances) + EventBridge Scheduler + AWS FIS |
 | アラーム連携 | CloudWatch アラーム + EventBridge + SQS + Bridge Lambda |
-| 知識進化 | DynamoDB Streams + Lambda (V3) |
+| 知識進化 | DynamoDB Streams + Lambda (V4) |
 | AWSリージョン | us-east-1 |
 | モデル | Claude Sonnet (us.anthropic.claude-sonnet-4-6) |
 
@@ -334,9 +326,9 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 ### In（作る）
 
 **V1: 動く（完了）**
-- Ticket / Asset Service（FastAPI + DynamoDB）
+- Ticket Service（FastAPI + DynamoDB）
 - AgentCore Gateway（OpenAPI spec → MCP変換）
-- Community Knowledge MCP群（Stack Overflow / GitHub Issues / Wikipedia / AWS Docs）
+- Community Knowledge MCP群（Stack Overflow / GitHub Issues / AWS Docs）
 - AgentCore Registry
 - A2Aエージェント群（Gateway / Triage / Diagnosis / Resolution）
 - AG-UI + React UI（Chat / Tickets / Knowledge タブ）
@@ -354,12 +346,10 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 - Bedrock Prompt Caching（全エージェントに `CacheConfig(strategy="auto")` を設定）
 - AgentCore Policy（Gateway に Policy Engine 付与、Cedar ポリシーによるエージェント別ツールアクセス制御）
 
-**V3: 見える**
+**V3: 見える（完了）**
 - AgentCore Observability（OTEL計装）
-- Cost Explorer MCP（Bedrock利用コスト分析）
-- Analysis Agent（稼働レポート・インシデント傾向分析）
-- AgentCore Evaluations
-- React UI Reports タブ追加
+- Infrastructure Inspector MCP（Lambda/FIS/CloudFormation 調査ツール — Diagnosis Agent の診断フロー強化）
+- ※ Analysis Agent / Cost Explorer MCP / Reports タブ / AgentCore Evaluations はスコープ外（デモのメインストーリーと乖離・コスト対効果低）
 
 **V4: 進化する**
 - DynamoDB Streams + Lambda（知識進化レイヤー）
@@ -380,16 +370,14 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 
 ### V1: 動く（完了）
 
-1. DynamoDBテーブル設計・作成（tickets / assets）
-2. Ticket Service 実装（FastAPI + DynamoDB）
-3. Asset Service 実装（FastAPI + DynamoDB）
-4. AgentCore Gateway 登録（OpenAPI spec → MCP変換）
-5. Community Knowledge MCP群 実装・デプロイ
-6. AgentCore Registry 登録（capability タグ付き）
-7. A2Aエージェント群 実装・デプロイ（Triage / Diagnosis / Resolution）
-8. Gateway Agent 実装・デプロイ（AG-UI protocol）
-9. AgentCore Memory 設定
-10. React UI 実装（Chat / Tickets / Knowledge タブ）
+1. ✅ DynamoDBテーブル設計・作成（tickets / knowledge）
+2. ✅ Ticket Service 実装（FastAPI + DynamoDB）
+3. ✅ AgentCore Gateway 登録（OpenAPI spec → MCP変換）
+4. ✅ Community Knowledge MCP群 実装・デプロイ（Stack Overflow / GitHub Issues / AWS Docs）
+5. ✅ AgentCore Registry 登録（capability タグ付き）
+6. ✅ A2Aエージェント群 実装・デプロイ（Triage / Diagnosis / Resolution）
+7. ✅ Gateway Agent 実装・デプロイ（AG-UI protocol）
+8. ✅ React UI 実装（Chat / Tickets / Knowledge タブ）
 
 ### V2: 自動化する
 
@@ -403,19 +391,17 @@ ticket-dispatcher Lambda (DynamoDB Streams → INSERT イベント)
 18. AgentCore Policy 設定（Gateway に Policy Engine 付与、エージェント別ツールアクセス制御）
 19. エンドツーエンドデモ検証（FIS起動 → アラーム → 診断 → チケット）
 
-### V3: 見える
+### V3: 見える（完了）
 
-20. OTEL計装（AgentCore Observability）
-21. Cost Explorer MCP デプロイ・Registry登録（Bedrock利用コスト分析）
-22. Analysis Agent 実装・デプロイ
-23. AgentCore Evaluations 設定
-24. React UI Reports タブ追加
+20. ✅ OTEL計装（AgentCore Observability）
+21. ✅ Infrastructure Inspector MCP 実装・デプロイ・Registry登録（Lambda/FIS/CloudFormation 調査）
+22. ※ Analysis Agent / Cost Explorer MCP / Reports タブ / AgentCore Evaluations → スコープ外
 
-### V4: 進化する
+### V4: 進化する（完了）
 
 24. ✅ DynamoDB Streams 有効化（V2 時点で完了済み）
-25. ✅ Lambda（stream consumer）実装（ticket-dispatcher として V2 時点で完了済み）
-26. V4 stream consumer Lambda 実装（MODIFY イベント専用）
-27. 知識の結晶化ロジック実装（Knowledge テーブル自動更新）
-28. lesson_learned フィールド実装（Resolution Agent が教訓を書き込む）
-29. Ticket 履歴追跡実装（history フィールド）
+25. ✅ ticket-dispatcher Lambda（INSERT イベント専用 — V2 時点で完了済み）
+26. ✅ knowledge-consumer Lambda 実装（MODIFY イベント専用: ticket resolved → 知識結晶化）
+27. ✅ 知識の結晶化ロジック実装（Knowledge テーブル自動更新）
+28. ✅ lesson_learned フィールド実装（Resolution Agent が教訓を書き込む）
+29. ✅ Ticket 履歴追跡実装（history フィールド）
