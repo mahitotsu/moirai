@@ -79,14 +79,12 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "6"
+_CATALOG_VERSION = "7"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
 _TICKETS_STATUS_INDEX = "status-created_at-index"
 _TICKETS_CATEGORY_INDEX = "category-created_at-index"
-_ASSETS_TYPE_INDEX = "type-name-index"
-_ASSETS_ENV_INDEX = "environment-type-index"
 _KNOWLEDGE_CATEGORY_INDEX = "category-crystallized_at-index"
 
 
@@ -116,13 +114,6 @@ _MCP_SERVERS: list[dict] = [
         "env": {},  # GITHUB_TOKEN は _github_env() で構築時に注入
     },
     {
-        "name": "wikipedia",
-        "runtime_name": "agora_wikipedia",
-        "description": "Wikipedia MCP — searches Wikipedia for technology concepts and articles",
-        "capability": "community-knowledge",
-        "env": {},
-    },
-    {
         "name": "aws-docs",
         "runtime_name": "agora_aws_docs",
         "description": "AWS Docs MCP — searches AWS documentation (awslabs/mcp)",
@@ -134,6 +125,13 @@ _MCP_SERVERS: list[dict] = [
         "runtime_name": "agora_cloudwatch",
         "description": "CloudWatch MCP — metrics, alarms, Logs Insights (awslabs/mcp)",
         "capability": "aws-observability",
+        "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
+    },
+    {
+        "name": "infrastructure-inspector",
+        "runtime_name": "agora_infrastructure_inspector",
+        "description": "Infrastructure Inspector MCP — inspects Lambda, FIS, and CloudFormation",
+        "capability": "aws-infrastructure",
         "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
     },
 ]
@@ -210,35 +208,6 @@ class AgoraStack(cdk.Stack):
             ),
         )
 
-        self.assets_table = dynamodb.Table(
-            self,
-            "AssetsTable",
-            table_name="agora-assets",
-            partition_key=dynamodb.Attribute(
-                name="asset_id", type=dynamodb.AttributeType.STRING
-            ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=cdk.RemovalPolicy.DESTROY,
-        )
-        self.assets_table.add_global_secondary_index(
-            index_name=_ASSETS_TYPE_INDEX,
-            partition_key=dynamodb.Attribute(
-                name="type", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="name", type=dynamodb.AttributeType.STRING
-            ),
-        )
-        self.assets_table.add_global_secondary_index(
-            index_name=_ASSETS_ENV_INDEX,
-            partition_key=dynamodb.Attribute(
-                name="environment", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="type", type=dynamodb.AttributeType.STRING
-            ),
-        )
-
         self.knowledge_table = dynamodb.Table(
             self,
             "KnowledgeTable",
@@ -311,29 +280,6 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        self.asset_role = iam.Role(
-            self,
-            "AssetServiceRole",
-            role_name="agora-asset-service-role",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec],
-        )
-        self.asset_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=_dynamo_rw,
-                resources=[
-                    self.assets_table.table_arn,
-                    self.assets_table.table_arn + "/index/*",
-                ],
-            )
-        )
-        self.asset_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-                resources=[self.services_api_key_secret.secret_arn],
-            )
-        )
-
         self.chat_proxy_role = iam.Role(
             self,
             "ChatProxyRole",
@@ -393,6 +339,18 @@ class AgoraStack(cdk.Stack):
                 ],
                 ["*"],
             ),
+            (
+                [
+                    "lambda:GetFunction",
+                    "lambda:ListEventSourceMappings",
+                    "fis:ListExperiments",
+                    "fis:GetExperiment",
+                    "fis:GetExperimentTemplate",
+                    "cloudformation:DescribeStacks",
+                    "cloudformation:DescribeStackResources",
+                ],
+                ["*"],
+            ),
         ]:
             self.mcp_runtime_role.add_to_policy(
                 iam.PolicyStatement(actions=_actions, resources=_resources)
@@ -411,10 +369,6 @@ class AgoraStack(cdk.Stack):
                     "bedrock-agentcore:GetApiKeyCredentialProvider",
                     "bedrock-agentcore:GetWorkloadAccessToken",
                     "bedrock-agentcore:GetResourceApiKey",
-                    "bedrock-agentcore:GetPolicyEngine",
-                    "bedrock-agentcore:CheckAuthorizePermissions",
-                    "bedrock-agentcore:AuthorizeAction",
-                    "bedrock-agentcore:PartiallyAuthorizeActions",
                 ],
                 resources=["*"],
             )
@@ -578,8 +532,8 @@ class AgoraStack(cdk.Stack):
         agent_images: dict[str, ecr_assets.DockerImageAsset] = {}
 
         _mcp_names = [
-            "stackoverflow", "github-issues", "wikipedia",
-            "aws-docs", "cloudwatch",
+            "stackoverflow", "github-issues",
+            "aws-docs", "cloudwatch", "infrastructure-inspector",
         ]
         for _name in _mcp_names:
             _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
@@ -676,36 +630,7 @@ class AgoraStack(cdk.Stack):
             },
         )
 
-        self.asset_fn = lambda_.DockerImageFunction(
-            self,
-            "AssetServiceFn",
-            function_name="agora-asset-service",
-            code=lambda_.DockerImageCode.from_image_asset(
-                str(_SERVICES_DIR / "asset-service"),
-                platform=ecr_assets.Platform.LINUX_ARM64,
-            ),
-            architecture=lambda_.Architecture.ARM_64,
-            memory_size=_MEMORY_SERVICE_MB,
-            timeout=_TIMEOUT_SERVICE,
-            role=self.asset_role,
-            log_group=logs.LogGroup(
-                self,
-                "AssetServiceFnLogs",
-                log_group_name="/aws/lambda/agora-asset-service",
-                retention=_LOG_RETENTION,
-                removal_policy=cdk.RemovalPolicy.DESTROY,
-            ),
-            environment={
-                **_common_env,
-                "TABLE_NAME": self.assets_table.table_name,
-                "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
-            },
-        )
-
         self.ticket_url = self.ticket_fn.add_function_url(
-            auth_type=lambda_.FunctionUrlAuthType.NONE,
-        )
-        self.asset_url = self.asset_fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.NONE,
         )
         self.chat_proxy_fn = lambda_.DockerImageFunction(
@@ -1057,17 +982,9 @@ class AgoraStack(cdk.Stack):
             )
 
         # =====================================================================
-        # AGENTCORE GATEWAY (HTTP/MCP) + Cedar Policy Engine
+        # AGENTCORE GATEWAY (HTTP/MCP)
         # 先に作成することで A2A エージェントが GATEWAY_URL を直接参照できる
         # =====================================================================
-        self.policy_engine = agentcore.CfnPolicyEngine(
-            self,
-            "AgoraPolicyEngine",
-            name="agora_policy_engine",
-            description="Cedar access control for Agora Gateway — per-agent tool restrictions",
-            tags=[cdk.CfnTag(key="project", value="agora")],
-        )
-
         self.agentcore_gateway = agentcore.CfnGateway(
             self,
             "AgoraGateway",
@@ -1076,10 +993,6 @@ class AgoraStack(cdk.Stack):
             role_arn=self.gateway_execution_role.role_arn,
             authorizer_type="NONE",
             protocol_type="MCP",
-            policy_engine_configuration=agentcore.CfnGateway.GatewayPolicyEngineConfigurationProperty(
-                arn=self.policy_engine.attr_policy_engine_arn,
-                mode="LOG_ONLY",
-            ),
             tags={"project": "agora"},
         )
 
@@ -1157,95 +1070,36 @@ class AgoraStack(cdk.Stack):
             tags=[cdk.CfnTag(key="project", value="agora")],
         )
 
-        _gw_targets: list[agentcore.CfnGatewayTarget] = []
-        for svc_name, url_token in (
-            ("ticket-service", self.ticket_url.url),
-            ("asset-service", self.asset_url.url),
-        ):
-            spec = json.loads((_SPECS_DIR / f"{svc_name}.json").read_text())
-            spec["servers"] = [{"url": "__SVC_URL__"}]
-            spec_template = json.dumps(spec).replace('"__SVC_URL__"', '"${SvcUrl}"')
-            inline_payload = cdk.Fn.sub(spec_template, {"SvcUrl": url_token})
-
-            cid = svc_name.replace("-", " ").title().replace(" ", "") + "GatewayTarget"
-            _gw_target = agentcore.CfnGatewayTarget(
-                self,
-                cid,
-                name=f"agora-{svc_name}",
-                description=f"Agora {svc_name.replace('-', ' ').title()} CRUD",
-                gateway_identifier=self.agentcore_gateway.attr_gateway_identifier,
-                target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
-                    mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
-                        open_api_schema=agentcore.CfnGatewayTarget.ApiSchemaConfigurationProperty(
-                            inline_payload=inline_payload,
-                        ),
+        spec = json.loads((_SPECS_DIR / "ticket-service.json").read_text())
+        spec["servers"] = [{"url": "__SVC_URL__"}]
+        spec_template = json.dumps(spec).replace('"__SVC_URL__"', '"${SvcUrl}"')
+        inline_payload = cdk.Fn.sub(spec_template, {"SvcUrl": self.ticket_url.url})
+        agentcore.CfnGatewayTarget(
+            self,
+            "TicketServiceGatewayTarget",
+            name="agora-ticket-service",
+            description="Agora Ticket Service CRUD",
+            gateway_identifier=self.agentcore_gateway.attr_gateway_identifier,
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    open_api_schema=agentcore.CfnGatewayTarget.ApiSchemaConfigurationProperty(
+                        inline_payload=inline_payload,
                     ),
                 ),
-                credential_provider_configurations=[
-                    agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
-                        credential_provider_type="API_KEY",
-                        credential_provider=agentcore.CfnGatewayTarget.CredentialProviderProperty(
-                            api_key_credential_provider=agentcore.CfnGatewayTarget.ApiKeyCredentialProviderProperty(
-                                provider_arn=self.api_key_cred.attr_credential_provider_arn,
-                                credential_parameter_name="x-api-key",
-                                credential_location="HEADER",
-                            ),
+            ),
+            credential_provider_configurations=[
+                agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                    credential_provider_type="API_KEY",
+                    credential_provider=agentcore.CfnGatewayTarget.CredentialProviderProperty(
+                        api_key_credential_provider=agentcore.CfnGatewayTarget.ApiKeyCredentialProviderProperty(
+                            provider_arn=self.api_key_cred.attr_credential_provider_arn,
+                            credential_parameter_name="x-api-key",
+                            credential_location="HEADER",
                         ),
-                    )
-                ],
-            )
-            _gw_targets.append(_gw_target)
-
-        # =====================================================================
-        # CEDAR POLICIES
-        # =====================================================================
-        _gw_arn_tpl = (
-            "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}"
-            ":gateway/${GatewayId}"
+                    ),
+                )
+            ],
         )
-        _gw_sub = {"GatewayId": self.agentcore_gateway.attr_gateway_identifier}
-
-        _READ_ACTIONS = "\n    ".join([
-            'AgentCore::Action::"agora-ticket-service___list_tickets_tickets_get",',
-            'AgentCore::Action::"agora-ticket-service___get_ticket_tickets__ticket_id__get",',
-            'AgentCore::Action::"agora-asset-service___list_assets_assets_get",',
-            'AgentCore::Action::"agora-asset-service___get_asset_assets__asset_id__get"',
-        ])
-        _WRITE_ACTIONS = "\n    ".join([
-            'AgentCore::Action::"agora-ticket-service___create_ticket_tickets_post",',
-            'AgentCore::Action::"agora-ticket-service___update_ticket_tickets__ticket_id__patch"',
-        ])
-
-        for _policy_name, _role_name, _actions in [
-            ("agora_triage_policy", "agora-triage-runtime-role", _READ_ACTIONS),
-            ("agora_diagnosis_policy", "agora-diagnosis-runtime-role", _READ_ACTIONS),
-            ("agora_resolution_policy", "agora-resolution-runtime-role", _WRITE_ACTIONS),
-        ]:
-            _cedar_tpl = (
-                "permit(\n"
-                "  principal is AgentCore::IamEntity,\n"
-                f"  action in [\n    {_actions}\n  ],\n"
-                f'  resource == AgentCore::Gateway::"{_gw_arn_tpl}"\n'
-                ") when {\n"
-                '  principal.id == "arn:aws:iam::${AWS::AccountId}'
-                f':role/{_role_name}"\n'
-                "};"
-            )
-            _lid = "".join(p.title() for p in _policy_name.split("_"))
-            _cfn_policy = agentcore.CfnPolicy(
-                self,
-                _lid,
-                name=_policy_name,
-                policy_engine_id=self.policy_engine.attr_policy_engine_id,
-                definition=agentcore.CfnPolicy.PolicyDefinitionProperty(
-                    cedar=agentcore.CfnPolicy.CedarPolicyProperty(
-                        statement=cdk.Fn.sub(_cedar_tpl, _gw_sub),
-                    ),
-                ),
-            )
-            # Cedar ポリシーの action 名は GatewayTarget 登録後に有効化されるため明示依存
-            for _gw_target in _gw_targets:
-                _cfn_policy.node.add_dependency(_gw_target)
 
         # =====================================================================
         # REGISTRY CATALOG — Lambda-backed Custom Resource
@@ -1337,7 +1191,6 @@ class AgoraStack(cdk.Stack):
         # OUTPUTS
         # =====================================================================
         cdk.CfnOutput(self, "TicketFunctionUrl", value=self.ticket_url.url)
-        cdk.CfnOutput(self, "AssetFunctionUrl", value=self.asset_url.url)
         cdk.CfnOutput(self, "UiBucketName", value=self.ui_bucket.bucket_name)
         cdk.CfnOutput(self, "UiUrl", value=f"https://{self.ui_distribution.domain_name}")
         cdk.CfnOutput(self, "GatewayUrl", value=self.agentcore_gateway.attr_gateway_url)
@@ -1346,5 +1199,4 @@ class AgoraStack(cdk.Stack):
             "GatewayRuntimeArn",
             value=self.gateway_agent_runtime.attr_agent_runtime_arn,
         )
-        cdk.CfnOutput(self, "PolicyEngineArn", value=self.policy_engine.attr_policy_engine_arn)
         cdk.CfnOutput(self, "GuardrailId", value=self.guardrail.attr_guardrail_id)

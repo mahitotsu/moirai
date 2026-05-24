@@ -1,9 +1,9 @@
 [project]
-name = "wikipedia"
+name = "infrastructure-inspector"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.0",
     "mcp[cli]>=1.0",
-    "httpx>=0.27",
+    "boto3>=1.34",
 ]

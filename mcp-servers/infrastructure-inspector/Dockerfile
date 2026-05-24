@@ -8,5 +8,5 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY server.py client.py ./
+COPY server.py ./
 CMD ["python", "server.py"]
