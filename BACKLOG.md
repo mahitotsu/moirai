@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V4 完了・デモ品質整備済み  
-**次のタスク**: デプロイして E2E デモを再確認する（aws sso login 後に make cdk-deploy）
+**フェーズ**: V4 完了・AgentCore 統合整備中  
+**次のタスク**: make cdk-deploy でデプロイ → 3サーバー(stackoverflow/github-issues/infrastructure-inspector)のGateway接続確認 → E2Eデモ再確認
 
 ---
 
@@ -100,6 +100,13 @@
   - Wikipedia MCP・Asset Service を完全削除（デモストーリーと無関係）
   - Cedar Policy Engine を CDK から除去（LOG_ONLY モードで可視効果なし）
   - infrastructure-inspector FastMCP 追加（Lambda/FIS/CloudFormation 調査ツール・デモ診断フロー強化）
+- [x] AgentCore 統合整備 (5b35733 2026-05-25):
+  - MCP全5サーバーをport=8000/EXPOSE 8000に統一（AgentCore Runtime要件）
+  - CfnGatewayTarget化（Lambda Custom Resource廃止・GATEWAY_IAM_ROLE + SigV4認証）
+  - A2Aエージェント全4体をBedrockAgentCoreApp(@app.entrypoint)化
+  - Gateway/Diagnosis/ResolutionをRegistry経由のMCP・サブエージェント動的発見に移行
+  - agents/common/registry.py を共通モジュールとして作成
+  - aws-docs/cloudwatchはportミスマッチ問題調査中のためGateway登録を一時スキップ
 - [x] デモ品質整備 (d7f88c1 2026-05-24):
   - gateway/agent.py の run_analysis 未定義インポート削除（致命的バグ修正）
   - CONCEPT.md 整合性修正（削除済みコンポーネントへの全言及を除去・現状に合わせて刷新）
