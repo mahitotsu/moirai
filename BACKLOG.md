@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・スコープ整理済み  
-**次のタスク**: CONCEPT.md / BACKLOG.md のスコープ記述を整理し直す（Reports/Analysis を除外した状態に合わせる）
+**次のタスク**: CONCEPT.md のスコープ記述を整理し直す（Wikipedia/AssetService/PolicyEngine を除外した状態に合わせる）
 
 ---
 
@@ -96,6 +96,10 @@
   - `lesson_learned` 未設定: Resolution Agent system_prompt を改訂し update_ticket 時の全必須フィールド (status/resolution/category/lesson_learned) を明示
   - 重複 history エントリ: `ticket-service/app/repository.py` に `data.status != existing.status` ガードを追加・DynamoDB Streams リトライで重複しないことをテストで確認
   - Chat タブ JSON parse エラー: CloudFront OAC → Lambda に `lambda:InvokeFunctionUrl` 権限を明示付与 (CDK) + `api.ts` に Content-Type チェックを追加
+- [x] デモスコープ絞り込み (e5f7433 2026-05-24):
+  - Wikipedia MCP・Asset Service を完全削除（デモストーリーと無関係）
+  - Cedar Policy Engine を CDK から除去（LOG_ONLY モードで可視効果なし）
+  - infrastructure-inspector FastMCP 追加（Lambda/FIS/CloudFormation 調査ツール・デモ診断フロー強化）
 
 ## 完了済み
 
