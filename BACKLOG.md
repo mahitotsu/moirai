@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V4 完了・スコープ整理済み  
-**次のタスク**: CONCEPT.md のスコープ記述を整理し直す（Wikipedia/AssetService/PolicyEngine を除外した状態に合わせる）
+**フェーズ**: V4 完了・デモ品質整備済み  
+**次のタスク**: デプロイして E2E デモを再確認する（aws sso login 後に make cdk-deploy）
 
 ---
 
@@ -100,6 +100,10 @@
   - Wikipedia MCP・Asset Service を完全削除（デモストーリーと無関係）
   - Cedar Policy Engine を CDK から除去（LOG_ONLY モードで可視効果なし）
   - infrastructure-inspector FastMCP 追加（Lambda/FIS/CloudFormation 調査ツール・デモ診断フロー強化）
+- [x] デモ品質整備 (d7f88c1 2026-05-24):
+  - gateway/agent.py の run_analysis 未定義インポート削除（致命的バグ修正）
+  - CONCEPT.md 整合性修正（削除済みコンポーネントへの全言及を除去・現状に合わせて刷新）
+  - UI System タブ追加（エージェント・MCP一覧・System Prompt 表示・コピーボタン付き）
 
 ## 完了済み
 
