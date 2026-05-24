@@ -48,11 +48,6 @@ def test_parse_a2a_response_handles_empty_body() -> None:
     assert tools._parse_a2a_response(b"") == "No response from agent."
 
 
-def test_run_analysis_returns_error_when_agent_not_found() -> None:
-    with patch.object(tools, "_find_agent_arn", return_value=None):
-        assert "not available" in tools.run_analysis("weekly report")
-
-
 def test_run_triage_returns_fallback_json_when_agent_not_found() -> None:
     with patch.object(tools, "_find_agent_arn", return_value=None):
         data = json.loads(tools.run_triage("DB error"))

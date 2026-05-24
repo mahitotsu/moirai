@@ -115,35 +115,6 @@ def _parse_a2a_response(body: bytes) -> str:
 
 
 @tool
-def run_analysis(report_request: str) -> str:
-    """Generate an operational analysis report for the IT Service Desk.
-
-    Delegates to the Analysis Agent, which gathers incident statistics,
-    Lambda error metrics, and Bedrock usage costs, then saves a structured
-    report to the reports store.
-
-    Use this when the user asks for a status report, incident trend analysis,
-    cost breakdown, or operational summary.
-
-    Args:
-        report_request: Description of the report to generate (e.g.
-            "Generate a weekly operational report" or
-            "Show me Bedrock costs for the past 7 days").
-
-    Returns:
-        A markdown-formatted summary of the generated report, including the
-        report ID for future reference.
-    """
-    arn = _find_agent_arn("analysis")
-    if not arn:
-        return "Analysis Agent is not available in the Registry."
-    try:
-        return _invoke_a2a_agent(arn, report_request)
-    except Exception as exc:
-        return f"Analysis failed: {exc}"
-
-
-@tool
 def run_triage(incident_description: str) -> str:
     """Classify an IT incident by severity and category.
 

@@ -20,7 +20,7 @@ def template() -> Template:
 # ---------------------------------------------------------------------------
 
 def test_dynamodb_tables_exist(template: Template) -> None:
-    for table_name in ("agora-tickets", "agora-assets", "agora-reports", "agora-knowledge"):
+    for table_name in ("agora-tickets", "agora-assets", "agora-knowledge"):
         template.has_resource_properties(
             "AWS::DynamoDB::Table",
             {"TableName": table_name, "BillingMode": "PAY_PER_REQUEST"},
@@ -33,7 +33,7 @@ def test_dynamodb_tables_exist(template: Template) -> None:
 
 def test_service_lambdas_are_arm64(template: Template) -> None:
     for fn_name in (
-        "agora-ticket-service", "agora-asset-service", "agora-reports-service", "agora-chat-proxy"
+        "agora-ticket-service", "agora-asset-service", "agora-chat-proxy"
     ):
         template.has_resource_properties(
             "AWS::Lambda::Function",
@@ -77,7 +77,7 @@ def test_knowledge_consumer_config(template: Template) -> None:
 
 def test_service_lambdas_have_table_name_env(template: Template) -> None:
     """各サービス Lambda に TABLE_NAME が注入されていることを確認する。"""
-    for fn_name in ("agora-ticket-service", "agora-asset-service", "agora-reports-service"):
+    for fn_name in ("agora-ticket-service", "agora-asset-service"):
         template.has_resource_properties(
             "AWS::Lambda::Function",
             {
@@ -107,10 +107,10 @@ def test_lambda_function_count(template: Template) -> None:
         "AWS::Lambda::Function",
         props=Match.object_like({}),
     )
-    # サービス4 + chat-proxy + ticket-dispatcher + knowledge-consumer + registry-catalog +
+    # ticket/asset + chat-proxy + ticket-dispatcher + knowledge-consumer + registry-catalog
     # BucketDeployment内部Lambda群 (Custom::CDKBucketDeployment) を除いた数
     named_fns = [
         r for r in resources.values()
         if r.get("Properties", {}).get("FunctionName", "").startswith("agora-")
     ]
-    assert len(named_fns) == 7, f"agora- Lambda 数が変わっています: {len(named_fns)}"
+    assert len(named_fns) == 6, f"agora- Lambda 数が変わっています: {len(named_fns)}"

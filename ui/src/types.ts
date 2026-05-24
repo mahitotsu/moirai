@@ -16,16 +16,6 @@ export interface Ticket {
   resolved_at?: string;
 }
 
-export type ReportType = "incident-summary" | "cost" | "operational" | "custom";
-
-export interface Report {
-  report_id: string;
-  title: string;
-  type: ReportType;
-  summary: string;
-  details: string;
-  created_at: string;
-}
 
 export interface ChatMessage {
   id: string;

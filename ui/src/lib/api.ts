@@ -1,4 +1,4 @@
-import type { Ticket, Report } from "@/types";
+import type { Ticket } from "@/types";
 
 // Local dev: set VITE_TICKET_SERVICE_URL + VITE_TICKET_API_KEY to hit Lambda directly.
 // Production: empty → relative URLs routed through CloudFront.
@@ -57,42 +57,6 @@ export async function getTicket(id: string): Promise<Ticket> {
   });
   if (!resp.ok) throw new Error(`Ticket not found: ${id}`);
   return resp.json() as Promise<Ticket>;
-}
-
-const REPORTS_URL = (import.meta.env.VITE_REPORTS_SERVICE_URL as string) ?? "";
-const REPORTS_API_KEY = (import.meta.env.VITE_REPORTS_API_KEY as string) ?? "";
-
-function reportsHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (REPORTS_API_KEY) h["x-api-key"] = REPORTS_API_KEY;
-  return h;
-}
-
-function reportsBase(): string {
-  return REPORTS_URL ? `${REPORTS_URL}/reports` : "/api/reports";
-}
-
-export async function listReports(filters?: {
-  type?: string;
-  limit?: number;
-}): Promise<Report[]> {
-  const params = new URLSearchParams();
-  if (filters?.type) params.set("type", filters.type);
-  if (filters?.limit) params.set("limit", String(filters.limit));
-  const qs = params.toString();
-  const resp = await fetchWithRetry(`${reportsBase()}${qs ? `?${qs}` : ""}`, {
-    headers: reportsHeaders(),
-  });
-  if (!resp.ok) throw new Error(`Reports Service error: ${resp.status}`);
-  return resp.json() as Promise<Report[]>;
-}
-
-export async function getReport(id: string): Promise<Report> {
-  const resp = await fetchWithRetry(`${reportsBase()}/${id}`, {
-    headers: reportsHeaders(),
-  });
-  if (!resp.ok) throw new Error(`Report not found: ${id}`);
-  return resp.json() as Promise<Report>;
 }
 
 export async function sendChat(

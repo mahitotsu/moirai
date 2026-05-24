@@ -79,7 +79,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "5"
+_CATALOG_VERSION = "6"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -136,13 +136,6 @@ _MCP_SERVERS: list[dict] = [
         "capability": "aws-observability",
         "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
     },
-    {
-        "name": "cost-explorer",
-        "runtime_name": "agora_cost_explorer",
-        "description": "Cost Explorer MCP — Bedrock & AWS billing cost analysis (awslabs/mcp)",
-        "capability": "aws-observability",
-        "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
-    },
 ]
 
 _A2A_AGENTS: list[dict] = [
@@ -164,13 +157,6 @@ _A2A_AGENTS: list[dict] = [
         "name": "resolution",
         "runtime_name": "agora_resolution",
         "description": "Resolution Agent — generates resolution plans and creates incident tickets",
-        "capability": "a2a-agent",
-        "env": {"MODEL_ID": _MODEL_SONNET},
-    },
-    {
-        "name": "analysis",
-        "runtime_name": "agora_analysis",
-        "description": "Analysis Agent — operational reports and Bedrock cost reporting",
         "capability": "a2a-agent",
         "env": {"MODEL_ID": _MODEL_SONNET},
     },
@@ -218,26 +204,6 @@ class AgoraStack(cdk.Stack):
             index_name=_TICKETS_CATEGORY_INDEX,
             partition_key=dynamodb.Attribute(
                 name="category", type=dynamodb.AttributeType.STRING
-            ),
-            sort_key=dynamodb.Attribute(
-                name="created_at", type=dynamodb.AttributeType.STRING
-            ),
-        )
-
-        self.reports_table = dynamodb.Table(
-            self,
-            "ReportsTable",
-            table_name="agora-reports",
-            partition_key=dynamodb.Attribute(
-                name="report_id", type=dynamodb.AttributeType.STRING
-            ),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=cdk.RemovalPolicy.DESTROY,
-        )
-        self.reports_table.add_global_secondary_index(
-            index_name="type-created_at-index",
-            partition_key=dynamodb.Attribute(
-                name="type", type=dynamodb.AttributeType.STRING
             ),
             sort_key=dynamodb.Attribute(
                 name="created_at", type=dynamodb.AttributeType.STRING
@@ -368,29 +334,6 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        self.reports_role = iam.Role(
-            self,
-            "ReportsServiceRole",
-            role_name="agora-reports-service-role",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec],
-        )
-        self.reports_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=_dynamo_rw,
-                resources=[
-                    self.reports_table.table_arn,
-                    self.reports_table.table_arn + "/index/*",
-                ],
-            )
-        )
-        self.reports_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-                resources=[self.services_api_key_secret.secret_arn],
-            )
-        )
-
         self.chat_proxy_role = iam.Role(
             self,
             "ChatProxyRole",
@@ -447,32 +390,6 @@ class AgoraStack(cdk.Stack):
                     "xray:GetSamplingRules",
                     "xray:GetSamplingTargets",
                     "xray:GetSamplingStatisticSummaries",
-                ],
-                ["*"],
-            ),
-            (
-                [
-                    "ce:GetCostAndUsage",
-                    "ce:GetCostForecast",
-                    "ce:GetUsageForecast",
-                    "ce:GetDimensionValues",
-                    "ce:GetTags",
-                    "ce:GetCostCategories",
-                    "ce:ListCostCategoryDefinitions",
-                    "ce:GetAnomalies",
-                    "ce:GetAnomalyMonitors",
-                    "ce:GetAnomalySubscriptions",
-                    "ce:GetReservationCoverage",
-                    "ce:GetReservationUtilization",
-                    "ce:GetSavingsPlansCoverage",
-                    "ce:GetSavingsPlansUtilization",
-                    "ce:GetSavingsPlansUtilizationDetails",
-                    "budgets:ViewBudget",
-                    "budgets:DescribeBudgets",
-                    "freetier:GetFreeTierUsage",
-                    "cost-optimization-hub:GetRecommendation",
-                    "cost-optimization-hub:ListRecommendations",
-                    "sts:GetCallerIdentity",
                 ],
                 ["*"],
             ),
@@ -580,7 +497,6 @@ class AgoraStack(cdk.Stack):
         _per_agent_roles: dict[str, iam.Role] = {}
         for _agent_name, _lid in [
             ("triage", "Triage"), ("diagnosis", "Diagnosis"), ("resolution", "Resolution"),
-            ("analysis", "Analysis"),
         ]:
             _r = iam.Role(
                 self,
@@ -591,48 +507,6 @@ class AgoraStack(cdk.Stack):
             for _a, _res in _agent_common_policies:
                 _r.add_to_policy(iam.PolicyStatement(actions=_a, resources=_res))
             _per_agent_roles[_agent_name] = _r
-
-        # Analysis: CloudWatch + Cost Explorer + DynamoDB (tickets read, reports write)
-        _per_agent_roles["analysis"].add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "cloudwatch:GetMetricData",
-                    "cloudwatch:GetMetricStatistics",
-                    "cloudwatch:ListMetrics",
-                    "cloudwatch:DescribeAlarms",
-                ],
-                resources=["*"],
-            )
-        )
-        _per_agent_roles["analysis"].add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "ce:GetCostAndUsage",
-                    "ce:GetCostForecast",
-                    "ce:GetDimensionValues",
-                    "sts:GetCallerIdentity",
-                ],
-                resources=["*"],
-            )
-        )
-        _per_agent_roles["analysis"].add_to_policy(
-            iam.PolicyStatement(
-                actions=["dynamodb:Scan", "dynamodb:Query", "dynamodb:GetItem"],
-                resources=[
-                    self.tickets_table.table_arn,
-                    self.tickets_table.table_arn + "/index/*",
-                ],
-            )
-        )
-        _per_agent_roles["analysis"].add_to_policy(
-            iam.PolicyStatement(
-                actions=_dynamo_rw,
-                resources=[
-                    self.reports_table.table_arn,
-                    self.reports_table.table_arn + "/index/*",
-                ],
-            )
-        )
 
         # Diagnosis: CloudWatch + DynamoDB 直接読み取り
         _per_agent_roles["diagnosis"].add_to_policy(
@@ -705,7 +579,7 @@ class AgoraStack(cdk.Stack):
 
         _mcp_names = [
             "stackoverflow", "github-issues", "wikipedia",
-            "aws-docs", "cloudwatch", "cost-explorer",
+            "aws-docs", "cloudwatch",
         ]
         for _name in _mcp_names:
             _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
@@ -716,7 +590,7 @@ class AgoraStack(cdk.Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             )
 
-        for _name in ["triage", "diagnosis", "resolution", "analysis"]:
+        for _name in ["triage", "diagnosis", "resolution"]:
             agent_images[_name] = ecr_assets.DockerImageAsset(
                 self,
                 _name.title() + "AgentImage",
@@ -828,42 +702,12 @@ class AgoraStack(cdk.Stack):
             },
         )
 
-        self.reports_fn = lambda_.DockerImageFunction(
-            self,
-            "ReportsServiceFn",
-            function_name="agora-reports-service",
-            code=lambda_.DockerImageCode.from_image_asset(
-                str(_SERVICES_DIR / "reports-service"),
-                platform=ecr_assets.Platform.LINUX_ARM64,
-            ),
-            architecture=lambda_.Architecture.ARM_64,
-            memory_size=_MEMORY_SERVICE_MB,
-            timeout=_TIMEOUT_SERVICE,
-            role=self.reports_role,
-            log_group=logs.LogGroup(
-                self,
-                "ReportsServiceFnLogs",
-                log_group_name="/aws/lambda/agora-reports-service",
-                retention=_LOG_RETENTION,
-                removal_policy=cdk.RemovalPolicy.DESTROY,
-            ),
-            environment={
-                **_common_env,
-                "TABLE_NAME": self.reports_table.table_name,
-                "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
-            },
-        )
-
         self.ticket_url = self.ticket_fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.NONE,
         )
         self.asset_url = self.asset_fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.NONE,
         )
-        self.reports_url = self.reports_fn.add_function_url(
-            auth_type=lambda_.FunctionUrlAuthType.NONE,
-        )
-
         self.chat_proxy_fn = lambda_.DockerImageFunction(
             self,
             "ChatProxyFn",
@@ -1089,14 +933,6 @@ class AgoraStack(cdk.Stack):
             read_timeout=cdk.Duration.seconds(60),
         )
         ticket_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.ticket_url.url))
-        reports_domain = cdk.Fn.select(2, cdk.Fn.split("/", self.reports_url.url))
-        reports_origin = origins.HttpOrigin(
-            reports_domain,
-            custom_headers={
-                "x-api-key": self.services_api_key_secret.secret_value.unsafe_unwrap(),
-            },
-            protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-        )
         ticket_origin = origins.HttpOrigin(
             ticket_domain,
             custom_headers={
@@ -1125,19 +961,6 @@ class AgoraStack(cdk.Stack):
                 ),
                 "/api/tickets*": cloudfront.BehaviorOptions(
                     origin=ticket_origin,
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
-                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
-                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-                    function_associations=[
-                        cloudfront.FunctionAssociation(
-                            event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
-                            function=strip_api_fn,
-                        )
-                    ],
-                ),
-                "/api/reports*": cloudfront.BehaviorOptions(
-                    origin=reports_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                     cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
@@ -1268,10 +1091,6 @@ class AgoraStack(cdk.Stack):
             env_vars = dict(agent["env"])
             if agent["name"] in ("diagnosis", "resolution"):
                 env_vars["GATEWAY_URL"] = self.agentcore_gateway.attr_gateway_url
-            if agent["name"] == "analysis":
-                env_vars["TICKETS_TABLE"] = self.tickets_table.table_name
-                env_vars["REPORTS_TABLE"] = self.reports_table.table_name
-
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,
@@ -1519,7 +1338,6 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         cdk.CfnOutput(self, "TicketFunctionUrl", value=self.ticket_url.url)
         cdk.CfnOutput(self, "AssetFunctionUrl", value=self.asset_url.url)
-        cdk.CfnOutput(self, "ReportsFunctionUrl", value=self.reports_url.url)
         cdk.CfnOutput(self, "UiBucketName", value=self.ui_bucket.bucket_name)
         cdk.CfnOutput(self, "UiUrl", value=f"https://{self.ui_distribution.domain_name}")
         cdk.CfnOutput(self, "GatewayUrl", value=self.agentcore_gateway.attr_gateway_url)
