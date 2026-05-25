@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: `make cdk-deploy` → CloudWatch MCP Lambda のデプロイ確認 → E2Eデモ再確認
+**次のタスク**: `make cdk-deploy` → Registry/Gateway 整合確認 → E2Eデモ再確認
 
 ---
 
@@ -107,12 +107,16 @@
   - Gateway/Diagnosis/ResolutionをRegistry経由のMCP・サブエージェント動的発見に移行
   - agents/common/registry.py を共通モジュールとして作成
   - aws-docs/cloudwatchはportミスマッチ問題調査中のためGateway登録を一時スキップ
-- [ ] CloudWatch MCP を Lambda wrap に切り替え (2026-05-25):
+- [x] CloudWatch MCP を Lambda wrap に切り替え (2026-05-25):
   - `run-mcp-servers-with-aws-lambda` (BedrockAgentCoreApp) を採用
   - AgentCore Runtime (コンテナ) → Lambda + Function URL (AWS_IAM) に変更
   - `LambdaFunctionURLEventHandler` で stdio↔HTTP ブリッジ
   - `mcp_server` Gateway Target として登録 (service="lambda" SigV4)
-  - `make cdk-deploy` でデプロイ確認待ち
+- [x] Registry/Gateway 不整合修正 (f1a1520 2026-05-26):
+  - agora-cloudwatch: runtime_name=None に修正 (Lambda wrap)・description 87文字に短縮 (schema ValidationException 修正)
+  - agora-ticket-service: Registry MCP エントリ新規追加
+  - agora-aws-knowledge: Registry MCP エントリ新規追加
+  - _register_mcp: 空文字フィールドを条件付き追加に変更・_CATALOG_VERSION "14" に更新
 - [x] aws-docs MCP → AWS Knowledge MCP Server 置き換え (2026-05-25):
   - aws-docs コンテナ (AgentCore Runtime) を廃止・mcp-servers/aws-docs/ を削除
   - AWS Knowledge MCP Server (https://knowledge-mcp.global.api.aws) を CfnGatewayTarget として直接登録
