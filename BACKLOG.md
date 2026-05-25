@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: make cdk-deploy でデプロイ → 3サーバー(stackoverflow/github-issues/infrastructure-inspector)のGateway接続確認 → E2Eデモ再確認
+**次のタスク**: `make cdk-deploy` → CloudWatch MCP Lambda のデプロイ確認 → E2Eデモ再確認
 
 ---
 
@@ -107,6 +107,17 @@
   - Gateway/Diagnosis/ResolutionをRegistry経由のMCP・サブエージェント動的発見に移行
   - agents/common/registry.py を共通モジュールとして作成
   - aws-docs/cloudwatchはportミスマッチ問題調査中のためGateway登録を一時スキップ
+- [ ] CloudWatch MCP を Lambda wrap に切り替え (2026-05-25):
+  - `run-mcp-servers-with-aws-lambda` (BedrockAgentCoreApp) を採用
+  - AgentCore Runtime (コンテナ) → Lambda + Function URL (AWS_IAM) に変更
+  - `LambdaFunctionURLEventHandler` で stdio↔HTTP ブリッジ
+  - `mcp_server` Gateway Target として登録 (service="lambda" SigV4)
+  - `make cdk-deploy` でデプロイ確認待ち
+- [x] aws-docs MCP → AWS Knowledge MCP Server 置き換え (2026-05-25):
+  - aws-docs コンテナ (AgentCore Runtime) を廃止・mcp-servers/aws-docs/ を削除
+  - AWS Knowledge MCP Server (https://knowledge-mcp.global.api.aws) を CfnGatewayTarget として直接登録
+  - 認証不要エンドポイントは credential_provider_configurations を省略することで Gateway Target に登録可能と判明
+  - agora-aws-knowledge が READY ステータスに遷移し、外部マネージドエンドポイントのプロキシが可能であることを確認
 - [x] デモ品質整備 (d7f88c1 2026-05-24):
   - gateway/agent.py の run_analysis 未定義インポート削除（致命的バグ修正）
   - CONCEPT.md 整合性修正（削除済みコンポーネントへの全言及を除去・現状に合わせて刷新）

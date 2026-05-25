@@ -54,6 +54,7 @@ _AGENTS_DIR = _ROOT / "agents"
 _MCP_DIR = _ROOT / "mcp-servers"
 _SERVICES_DIR = _ROOT / "services"
 _LAMBDA_DIR = Path(__file__).parent.parent / "lambda"
+_LAMBDA_CLOUDWATCH_MCP_DIR = Path(__file__).parent.parent / "lambda-cloudwatch-mcp"
 _SPECS_DIR = Path(__file__).parent.parent / "specs"
 
 
@@ -79,7 +80,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "8"
+_CATALOG_VERSION = "10"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -112,20 +113,6 @@ _MCP_SERVERS: list[dict] = [
         "description": "GitHub Issues search MCP — searches GitHub for bug reports and discussions",
         "capability": "community-knowledge",
         "env": {},  # GITHUB_TOKEN は _github_env() で構築時に注入
-    },
-    {
-        "name": "aws-docs",
-        "runtime_name": "agora_aws_docs",
-        "description": "AWS Docs MCP — searches AWS documentation (awslabs/mcp)",
-        "capability": "community-knowledge",
-        "env": {"AWS_DOCUMENTATION_PARTITION": "aws", "FASTMCP_LOG_LEVEL": "WARNING"},
-    },
-    {
-        "name": "cloudwatch",
-        "runtime_name": "agora_cloudwatch",
-        "description": "CloudWatch MCP — metrics, alarms, Logs Insights (awslabs/mcp)",
-        "capability": "aws-observability",
-        "env": {"FASTMCP_LOG_LEVEL": "WARNING"},
     },
     {
         "name": "infrastructure-inspector",
@@ -541,7 +528,7 @@ class AgoraStack(cdk.Stack):
 
         _mcp_names = [
             "stackoverflow", "github-issues",
-            "aws-docs", "cloudwatch", "infrastructure-inspector",
+            "infrastructure-inspector",
         ]
         for _name in _mcp_names:
             _cid = _name.replace("-", " ").title().replace(" ", "") + "McpImage"
@@ -1009,7 +996,8 @@ class AgoraStack(cdk.Stack):
                     instructions=(
                         "Agora IT Service Desk gateway. "
                         "Tools: ticket management (create, list, update), "
-                        "community knowledge search (Stack Overflow, GitHub Issues, AWS Docs), "
+                        "community knowledge search (Stack Overflow, GitHub Issues, "
+                        "AWS Knowledge), "
                         "infrastructure inspection (Lambda config, active FIS experiments, "
                         "CloudFormation stacks), "
                         "CloudWatch observability (active alarms, metrics, Logs Insights queries)."
@@ -1217,10 +1205,74 @@ class AgoraStack(cdk.Stack):
                 ),
             )
         ]
-        _GATEWAY_TARGET_SKIP = {"aws-docs", "cloudwatch"}
+        # =====================================================================
+        # CLOUDWATCH MCP — Lambda wrap (awslabs stdio → BedrockAgentCoreGatewayTargetHandler)
+        # run-mcp-servers-with-aws-lambda で stdio MCP を Lambda 直接呼び出しに変換。
+        # lambda_ Gateway Target として登録し、tool_schema を事前定義する。
+        # =====================================================================
+        _cloudwatch_mcp_role = iam.Role(
+            self,
+            "CloudwatchMcpLambdaRole",
+            role_name="agora-cloudwatch-mcp-lambda-role",
+            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[_basic_exec],
+        )
+        _cloudwatch_mcp_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "cloudwatch:GetMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics",
+                    "cloudwatch:DescribeAlarms",
+                    "cloudwatch:DescribeAlarmsForMetric",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                    "logs:FilterLogEvents",
+                    "logs:GetLogEvents",
+                    "logs:StartQuery",
+                    "logs:GetQueryResults",
+                    "logs:StopQuery",
+                ],
+                resources=["*"],
+            )
+        )
+
+        self.cloudwatch_mcp_fn = lambda_.DockerImageFunction(
+            self,
+            "CloudwatchMcpFn",
+            function_name="agora-cloudwatch-mcp",
+            code=lambda_.DockerImageCode.from_image_asset(
+                str(_LAMBDA_CLOUDWATCH_MCP_DIR),
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            ),
+            architecture=lambda_.Architecture.ARM_64,
+            memory_size=512,
+            timeout=cdk.Duration.seconds(60),
+            role=_cloudwatch_mcp_role,
+            log_group=logs.LogGroup(
+                self,
+                "CloudwatchMcpFnLogs",
+                log_group_name="/aws/lambda/agora-cloudwatch-mcp",
+                retention=_LOG_RETENTION,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
+        )
+
+        # Gateway execution role に Lambda 直接呼び出し権限を付与
+        self.gateway_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["lambda:InvokeFunction"],
+                resources=[self.cloudwatch_mcp_fn.function_arn],
+            )
+        )
+        # 明示的なリソースベースポリシーで Gateway → Lambda 呼び出しを許可
+        self.cloudwatch_mcp_fn.add_permission(
+            "AllowGatewayExecutionRole",
+            principal=iam.ArnPrincipal(self.gateway_execution_role.role_arn),
+            action="lambda:InvokeFunction",
+        )
+
         for srv in _MCP_SERVERS:
-            if srv["name"] in _GATEWAY_TARGET_SKIP:
-                continue
             _runtime = _mcp_runtimes[srv["name"]]
             _ep = _mcp_endpoints[srv["name"]]
             _tgt = agentcore.CfnGatewayTarget(
@@ -1240,6 +1292,149 @@ class AgoraStack(cdk.Stack):
                 metadata_configuration=_mcp_metadata,
             )
             _tgt.node.add_dependency(_ep)
+
+        # ── tool_schema ヘルパー ──────────────────────────────────────────────
+        def _schema(type_: str, *, desc: str | None = None, items=None, props=None, required=None):
+            return agentcore.CfnGatewayTarget.SchemaDefinitionProperty(
+                type=type_, description=desc, items=items,
+                properties=props, required=required,
+            )
+
+        def _str(desc: str):
+            return _schema("string", desc=desc)
+
+        def _int(desc: str):
+            return _schema("integer", desc=desc)
+
+        def _arr_str(desc: str):
+            return _schema("array", desc=desc, items=_schema("string"))
+
+        def _tool(name: str, desc: str, props: dict, required: list[str] | None = None):
+            return agentcore.CfnGatewayTarget.ToolDefinitionProperty(
+                name=name,
+                description=desc,
+                input_schema=_schema("object", props=props, required=required),
+            )
+
+        _cw_tools = [
+            _tool(
+                "get_active_alarms",
+                "Gets all CloudWatch Alarms currently in ALARM state across the account.",
+                {
+                    "max_items": _int("Maximum number of alarms to return (default: 50)"),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+            ),
+            _tool(
+                "get_alarm_history",
+                "Gets state-change history for a CloudWatch alarm and suggests"
+                " investigation time ranges.",
+                {
+                    "alarm_name": _str("Name of the alarm to retrieve history for"),
+                    "start_time": _str("ISO 8601 start time (default: 24 hours ago)"),
+                    "end_time": _str("ISO 8601 end time (default: now)"),
+                    "max_items": _int("Maximum number of history items (default: 50)"),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+                required=["alarm_name"],
+            ),
+            _tool(
+                "get_metric_data",
+                "Retrieves CloudWatch metric data for a specific metric within a time range.",
+                {
+                    "namespace": _str("Metric namespace (e.g. AWS/Lambda, AWS/EC2)"),
+                    "metric_name": _str("Metric name (e.g. Errors, Duration, Invocations)"),
+                    "start_time": _str("ISO 8601 start time (default: 3 hours before end_time)"),
+                    "end_time": _str("ISO 8601 end time (default: now)"),
+                    "statistic": _str("Statistic: AVG, SUM, MAX, MIN, COUNT (default: AVG)"),
+                    "dimensions": _schema(
+                        "array",
+                        desc="List of dimensions {name, value} to identify the metric",
+                        items=_schema("object"),
+                    ),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+            ),
+            _tool(
+                "describe_log_groups",
+                "Lists CloudWatch log groups, optionally filtered by name prefix.",
+                {
+                    "log_group_name_prefix": _str("Filter log groups by this name prefix"),
+                    "max_items": _int("Maximum number of log groups to return"),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+            ),
+            _tool(
+                "execute_log_insights_query",
+                "Executes a CloudWatch Logs Insights query and returns results."
+                " Always include a | limit clause.",
+                {
+                    "log_group_names": _arr_str("List of log group names to query (max 50)"),
+                    "log_group_identifiers": _arr_str("List of log group ARNs to query (max 50)"),
+                    "start_time": _str("ISO 8601 start time"),
+                    "end_time": _str("ISO 8601 end time"),
+                    "query_string": _str("CloudWatch Logs Insights query string"),
+                    "limit": _int("Maximum number of log events to return"),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+                required=["start_time", "end_time", "query_string"],
+            ),
+            _tool(
+                "get_logs_insight_query_results",
+                "Retrieves results of a previously started CloudWatch Logs Insights query.",
+                {
+                    "query_id": _str("Query ID returned by execute_log_insights_query"),
+                    "region": _str("AWS region (default: us-east-1)"),
+                },
+                required=["query_id"],
+            ),
+        ]
+
+        # CloudWatch MCP — lambda_ target (BedrockAgentCoreGatewayTargetHandler)
+        agentcore.CfnGatewayTarget(
+            self,
+            "CloudwatchMcpGatewayTarget",
+            name="agora-cloudwatch",
+            description="CloudWatch MCP — metrics, alarms, Logs Insights (awslabs/mcp via Lambda)",
+            gateway_identifier=self.agentcore_gateway.attr_gateway_identifier,
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    lambda_=agentcore.CfnGatewayTarget.McpLambdaTargetConfigurationProperty(
+                        lambda_arn=self.cloudwatch_mcp_fn.function_arn,
+                        tool_schema=agentcore.CfnGatewayTarget.ToolSchemaProperty(
+                            inline_payload=_cw_tools,
+                        ),
+                    )
+                )
+            ),
+            credential_provider_configurations=[
+                agentcore.CfnGatewayTarget.CredentialProviderConfigurationProperty(
+                    credential_provider_type="GATEWAY_IAM_ROLE",
+                    # Lambda target は IamCredentialProvider 非対応。
+                    # credential_provider を省略することで GATEWAY_IAM_ROLE のみ指定。
+                )
+            ],
+        )
+
+        # AWS Knowledge MCP Server — 認証不要のマネージドエンドポイントを直接登録
+        agentcore.CfnGatewayTarget(
+            self,
+            "AwsKnowledgeGatewayTarget",
+            name="agora-aws-knowledge",
+            description=(
+                "AWS Knowledge MCP — managed AWS docs, blog posts,"
+                " and Well-Architected guidance (awslabs)"
+            ),
+            gateway_identifier=self.agentcore_gateway.attr_gateway_identifier,
+            target_configuration=agentcore.CfnGatewayTarget.TargetConfigurationProperty(
+                mcp=agentcore.CfnGatewayTarget.McpTargetConfigurationProperty(
+                    mcp_server=agentcore.CfnGatewayTarget.McpServerTargetConfigurationProperty(
+                        endpoint="https://knowledge-mcp.global.api.aws",
+                    )
+                )
+            ),
+            metadata_configuration=_mcp_metadata,
+        )
 
         # =====================================================================
         # SSM — チケットサービス URL (FaultInjectionStack が参照)

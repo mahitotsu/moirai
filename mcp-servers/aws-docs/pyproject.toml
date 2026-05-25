@@ -1,7 +1,0 @@
-[project]
-name = "aws-docs"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "awslabs.aws-documentation-mcp-server>=1.0",
-]

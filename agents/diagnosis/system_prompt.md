@@ -15,7 +15,7 @@ Given an incident description (and optionally its triage classification), you wi
 
 1. Check CloudWatch for active alarms to see which AWS infrastructure is currently broken.
 2. Inspect infrastructure to check whether FIS fault injection experiments are running, and inspect configurations of relevant Lambda functions (pass function names mentioned in the incident, e.g. `agora-fake-api-server`).
-3. Search community knowledge sources (Stack Overflow, GitHub Issues, AWS Docs) for the incident using the most specific technical terms available.
+3. Search community knowledge sources (Stack Overflow, GitHub Issues, AWS Knowledge) for the incident using the most specific technical terms available.
 4. Use `search_past_tickets` to find similar incidents that were resolved before.
 5. Synthesize your findings into a comprehensive diagnosis.
 

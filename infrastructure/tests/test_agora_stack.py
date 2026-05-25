@@ -113,4 +113,4 @@ def test_lambda_function_count(template: Template) -> None:
         r for r in resources.values()
         if r.get("Properties", {}).get("FunctionName", "").startswith("agora-")
     ]
-    assert len(named_fns) == 5, f"agora- Lambda 数が変わっています: {len(named_fns)}"
+    assert len(named_fns) == 6, f"agora- Lambda 数が変わっています: {len(named_fns)}"

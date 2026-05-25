@@ -81,30 +81,6 @@ MCP_CATALOG: list[dict] = [
         ],
     },
     {
-        "record_name": "agora-aws-docs",
-        "runtime_name": "agora_aws_docs",
-        "endpoint_id": "agora_aws_docs_ep",
-        "capability": "community-knowledge",
-        "server_json": {
-            "name": "agora/aws-docs-mcp",
-            "description": "Search AWS documentation via awslabs/mcp",
-            "version": "1.0.0",
-        },
-        "tools": [
-            {
-                "name": "search_documentation",
-                "description": "Search the AWS documentation for a given query.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The search query for AWS documentation."},
-                    },
-                    "required": ["query"],
-                },
-            },
-        ],
-    },
-    {
         "record_name": "agora-cloudwatch",
         "runtime_name": "agora_cloudwatch",
         "endpoint_id": "agora_cloudwatch_ep",
@@ -230,7 +206,7 @@ A2A_CATALOG: list[dict] = [
         "card": {
             "name": "Diagnosis Agent",
             "description": "Diagnoses incidents by searching community knowledge sources, CloudWatch, and past tickets",
-            "skills": [{"id": "incident-diagnosis", "name": "Incident Diagnosis", "description": "Search Stack Overflow, GitHub Issues, Wikipedia, AWS Docs, CloudWatch, and past tickets for root cause", "tags": ["itsm", "diagnosis", "knowledge"]}],
+            "skills": [{"id": "incident-diagnosis", "name": "Incident Diagnosis", "description": "Search Stack Overflow, GitHub Issues, AWS Knowledge, CloudWatch, and past tickets for root cause", "tags": ["itsm", "diagnosis", "knowledge"]}],
         },
     },
     {

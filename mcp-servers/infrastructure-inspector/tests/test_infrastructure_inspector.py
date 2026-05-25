@@ -94,7 +94,9 @@ def test_list_active_fis_experiments_returns_none_running() -> None:
 
 def test_list_active_fis_experiments_returns_details() -> None:
     _mock_fis.list_experiments.return_value = {
-        "experiments": [{"id": "exp-abc123", "experimentTemplateId": "EXTabc", "state": {"status": "running"}}]
+        "experiments": [
+            {"id": "exp-abc123", "experimentTemplateId": "EXTabc", "state": {"status": "running"}}
+        ]
     }
     _mock_fis.get_experiment.return_value = {
         "experiment": {
