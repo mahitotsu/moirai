@@ -80,7 +80,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "10"
+_CATALOG_VERSION = "14"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────

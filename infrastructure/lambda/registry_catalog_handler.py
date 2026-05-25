@@ -29,6 +29,71 @@ REGISTRY_NAME = "agora_registry"
 # ---------------------------------------------------------------------------
 MCP_CATALOG: list[dict] = [
     {
+        "record_name": "agora-ticket-service",
+        "runtime_name": None,  # OpenAPI HTTP target, not an AgentCore Runtime
+        "endpoint_id": None,
+        "capability": "ticket-management",
+        "server_json": {
+            "name": "agora/ticket-service",
+            "description": "Agora Ticket Service — create, list, get, and update IT incident tickets",
+            "version": "1.0.0",
+        },
+        "tools": [
+            {
+                "name": "create_ticket",
+                "description": "Create a new IT incident ticket.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Short title of the incident."},
+                        "description": {"type": "string", "description": "Detailed description of the incident."},
+                        "category": {"type": "string", "description": "Incident category (e.g. network, application, hardware)."},
+                        "severity": {"type": "string", "description": "Severity level: low, medium, high, critical."},
+                    },
+                    "required": ["title", "description", "category", "severity"],
+                },
+            },
+            {
+                "name": "list_tickets",
+                "description": "List IT incident tickets, optionally filtered by status or category.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "description": "Filter by status: open, investigating, resolved."},
+                        "category": {"type": "string", "description": "Filter by category."},
+                        "limit": {"type": "integer", "description": "Maximum number of tickets to return."},
+                    },
+                    "required": [],
+                },
+            },
+            {
+                "name": "get_ticket",
+                "description": "Get details of a specific IT incident ticket by ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ticket_id": {"type": "string", "description": "The unique ticket ID."},
+                    },
+                    "required": ["ticket_id"],
+                },
+            },
+            {
+                "name": "update_ticket",
+                "description": "Update the status or resolution of an existing ticket.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ticket_id": {"type": "string", "description": "The unique ticket ID."},
+                        "status": {"type": "string", "description": "New status: open, investigating, resolved."},
+                        "resolution": {"type": "string", "description": "Resolution notes (required when status=resolved)."},
+                        "category": {"type": "string", "description": "Updated category if needed."},
+                    },
+                    "required": ["ticket_id"],
+                },
+            },
+        ],
+    },
+    {
         "record_name": "agora-stackoverflow",
         "runtime_name": "agora_stackoverflow",
         "endpoint_id": "agora_stackoverflow_ep",
@@ -82,8 +147,8 @@ MCP_CATALOG: list[dict] = [
     },
     {
         "record_name": "agora-cloudwatch",
-        "runtime_name": "agora_cloudwatch",
-        "endpoint_id": "agora_cloudwatch_ep",
+        "runtime_name": None,  # Lambda wrap (agora-cloudwatch-mcp), not an AgentCore Runtime
+        "endpoint_id": None,
         "capability": "aws-observability",
         "server_json": {
             "name": "agora/cloudwatch-mcp",
@@ -175,6 +240,42 @@ MCP_CATALOG: list[dict] = [
                         "stack_name": {"type": "string", "description": "The name of the CloudFormation stack."},
                     },
                     "required": ["stack_name"],
+                },
+            },
+        ],
+    },
+    {
+        "record_name": "agora-aws-knowledge",
+        "runtime_name": None,  # External managed endpoint (https://knowledge-mcp.global.api.aws)
+        "endpoint_id": None,
+        "capability": "aws-knowledge",
+        "server_json": {
+            "name": "agora/aws-knowledge-mcp",
+            "description": "AWS Knowledge MCP — AWS docs, blog posts, and Well-Architected guidance (awslabs)",
+            "version": "1.0.0",
+        },
+        "tools": [
+            {
+                "name": "search_documentation",
+                "description": "Search AWS documentation for a given query.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "searchPhrase": {"type": "string", "description": "The search phrase to find relevant AWS documentation."},
+                    },
+                    "required": ["searchPhrase"],
+                },
+            },
+            {
+                "name": "read_documentation",
+                "description": "Read a specific AWS documentation page by URL.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "The URL of the AWS documentation page to read."},
+                        "paragraph": {"type": "string", "description": "Optional specific paragraph or section to retrieve."},
+                    },
+                    "required": ["url"],
                 },
             },
         ],
@@ -335,13 +436,16 @@ def _register_mcp(control, registry_id: str, server: dict, runtime_arn: str, exi
         logger.info(f"[{name}] Already registered — skipping")
         return
 
-    server_content = {
+    server_content: dict = {
         **server["server_json"],
-        "runtimeName": server["runtime_name"],
-        "runtimeArn": runtime_arn,
-        "endpointId": server["endpoint_id"],
         "capability": server["capability"],
     }
+    if server["runtime_name"]:
+        server_content["runtimeName"] = server["runtime_name"]
+    if runtime_arn:
+        server_content["runtimeArn"] = runtime_arn
+    if server["endpoint_id"]:
+        server_content["endpointId"] = server["endpoint_id"]
     resp = control.create_registry_record(
         registryId=registry_id,
         name=name,
@@ -465,10 +569,13 @@ def handler(event: dict, context: object) -> dict:
         logger.warning("McpGatewayUrl not provided — skipping MCP Gateway record")
 
     for server in MCP_CATALOG:
-        arn = runtime_arns.get(server["runtime_name"])
-        if not arn:
-            logger.warning(f"[{server['record_name']}] Runtime not found — skipping")
-            continue
+        if server["runtime_name"] is not None:
+            arn = runtime_arns.get(server["runtime_name"])
+            if not arn:
+                logger.warning(f"[{server['record_name']}] Runtime not found — skipping")
+                continue
+        else:
+            arn = ""
         _register_mcp(control, registry_id, server, arn, existing)
 
     for agent in A2A_CATALOG:
