@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: `make cdk-deploy` → Bedrock Prompt Management デプロイ確認 → E2Eデモ再確認
+**次のタスク**: `make cdk-deploy` → Skills デプロイ確認 → E2Eデモ再確認
 
 ---
 
@@ -112,6 +112,15 @@
   - AgentCore Runtime (コンテナ) → Lambda + Function URL (AWS_IAM) に変更
   - `LambdaFunctionURLEventHandler` で stdio↔HTTP ブリッジ
   - `mcp_server` Gateway Target として登録 (service="lambda" SigV4)
+- [x] AgentCore Registry Skills 導入 (677d961 2026-05-27):
+  - skills/ ディレクトリ (uv workspace スコープ外) に SKILL.md × 3 を作成
+  - incident-severity-classification: Triage + Resolution が共有する重大度・カテゴリ分類基準
+  - api-error-diagnosis-runbook: Diagnosis Agent 向け API スロットリング診断 5 ステップ Runbook
+  - resolution-documentation-standard: Resolution Agent 向けチケットクローズ記述フォーマット
+  - registry.py に discover_skills() 追加・agent.py 3 本に AgentSkills プラグイン注入
+  - registry_catalog_handler.py に SKILL_CATALOG + _register_skill() 追加 (descriptorType="AGENT_SKILLS")
+  - SKILL.md 更新 → CDK deploy で Registry が自動更新される設計
+  - system_prompt.md 3 本を「役割定義のみ」に絞り手順・基準をスキルに委譲
 - [x] Bedrock Prompt Management 統合 (38ca3f3 2026-05-26):
   - 全4エージェントのシステムプロンプトを Bedrock PM から動的取得 (フォールバック廃止・フェイルファスト)
   - ticket-dispatcher のユーザープロンプトテンプレートも Bedrock PM 管理化 (`{{variable}}` プレースホルダ展開)
