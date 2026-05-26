@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: `make cdk-deploy` → Skills デプロイ確認 → E2Eデモ再確認
+**次のタスク**: E2Eデモ再確認 → 最終リリース準備
 
 ---
 
@@ -128,6 +128,11 @@
   - ticket-service: GET /prompts エンドポイント追加 (UI向け live プロンプト取得)
   - CloudFront: /api/prompts → ticket-service ルーティング追加
   - SystemTab: デプロイ中の実プロンプトをリアルタイム表示 (ハードコード全廃)
+- [x] Registry レコード承認バグ修正 (6962d07 2026-05-27):
+  - registry_role に `SubmitRegistryRecordForApproval` + `UpdateRegistry` 追加（欠落が原因でレコードが DRAFT 固着）
+  - `_ensure_registry` を delete+recreate 方式に変更（update_registry による autoApproval 後付けは即時反映されないため）
+  - agents/*/agent.py の `plugins=plugins` に `# type: ignore[arg-type]` 追加（mypy invariance エラー解消）
+  - _CATALOG_VERSION 16→18
 - [x] Registry/Gateway 不整合修正 (f1a1520 2026-05-26):
   - agora-cloudwatch: runtime_name=None に修正 (Lambda wrap)・description 87文字に短縮 (schema ValidationException 修正)
   - agora-ticket-service: Registry MCP エントリ新規追加
