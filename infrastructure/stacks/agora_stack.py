@@ -81,7 +81,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "16"
+_CATALOG_VERSION = "18"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -541,13 +541,13 @@ class AgoraStack(cdk.Stack):
             description: str,
             text: str,
             input_variables: list[str] | None = None,
-        ) -> bedrock.CfnPrompt:
+        ) -> tuple[bedrock.CfnPrompt, bedrock.CfnPromptVersion]:
             vars_cfg = (
                 [bedrock.CfnPrompt.PromptInputVariableProperty(name=v) for v in input_variables]
                 if input_variables
                 else []
             )
-            return bedrock.CfnPrompt(
+            prompt = bedrock.CfnPrompt(
                 self,
                 logical_id,
                 name=name,
@@ -567,32 +567,39 @@ class AgoraStack(cdk.Stack):
                 ],
                 tags={"project": "agora"},
             )
+            version = bedrock.CfnPromptVersion(
+                self,
+                logical_id + "Version",
+                prompt_arn=prompt.attr_arn,
+                description=description,
+            )
+            return prompt, version
 
-        self.gateway_prompt = _make_text_prompt(
+        self.gateway_prompt, self.gateway_prompt_version = _make_text_prompt(
             "GatewaySystemPrompt",
             "agora-gateway-system-prompt",
             "Gateway Agent system prompt",
             (_AGENTS_DIR / "gateway" / "system_prompt.md").read_text(),
         )
-        self.triage_prompt = _make_text_prompt(
+        self.triage_prompt, self.triage_prompt_version = _make_text_prompt(
             "TriageSystemPrompt",
             "agora-triage-system-prompt",
             "Triage Agent system prompt",
             (_AGENTS_DIR / "triage" / "system_prompt.md").read_text(),
         )
-        self.diagnosis_prompt = _make_text_prompt(
+        self.diagnosis_prompt, self.diagnosis_prompt_version = _make_text_prompt(
             "DiagnosisSystemPrompt",
             "agora-diagnosis-system-prompt",
             "Diagnosis Agent system prompt",
             (_AGENTS_DIR / "diagnosis" / "system_prompt.md").read_text(),
         )
-        self.resolution_prompt = _make_text_prompt(
+        self.resolution_prompt, self.resolution_prompt_version = _make_text_prompt(
             "ResolutionSystemPrompt",
             "agora-resolution-system-prompt",
             "Resolution Agent system prompt",
             (_AGENTS_DIR / "resolution" / "system_prompt.md").read_text(),
         )
-        self.dispatcher_prompt = _make_text_prompt(
+        self.dispatcher_prompt, self.dispatcher_prompt_version = _make_text_prompt(
             "DispatcherUserPrompt",
             "agora-dispatcher-user-prompt",
             "ticket-dispatcher user prompt template for Gateway Agent",
@@ -665,7 +672,7 @@ class AgoraStack(cdk.Stack):
                 "MODEL_ID": _MODEL_SONNET,
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
                 "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
-                "SYSTEM_PROMPT_ARN": self.gateway_prompt.attr_arn,
+                "SYSTEM_PROMPT_ARN": self.gateway_prompt_version.attr_arn,
             },
             tags={"capability": "gateway", "project": "agora"},
         )
@@ -708,10 +715,10 @@ class AgoraStack(cdk.Stack):
                 **_common_env,
                 "TABLE_NAME": self.tickets_table.table_name,
                 "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
-                "GATEWAY_PROMPT_ARN": self.gateway_prompt.attr_arn,
-                "TRIAGE_PROMPT_ARN": self.triage_prompt.attr_arn,
-                "DIAGNOSIS_PROMPT_ARN": self.diagnosis_prompt.attr_arn,
-                "RESOLUTION_PROMPT_ARN": self.resolution_prompt.attr_arn,
+                "GATEWAY_PROMPT_ARN": self.gateway_prompt_version.attr_arn,
+                "TRIAGE_PROMPT_ARN": self.triage_prompt_version.attr_arn,
+                "DIAGNOSIS_PROMPT_ARN": self.diagnosis_prompt_version.attr_arn,
+                "RESOLUTION_PROMPT_ARN": self.resolution_prompt_version.attr_arn,
             },
         )
 
@@ -811,7 +818,7 @@ class AgoraStack(cdk.Stack):
             environment={
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
                 "AGENT_RUNTIME_ARN": self.gateway_agent_runtime.attr_agent_runtime_arn,
-                "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt.attr_arn,
+                "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt_version.attr_arn,
             },
         )
         # DynamoEventSource の内部実装は Grant.addToPrincipal(scope=...) を呼ぶ (deprecated)。
@@ -1124,9 +1131,9 @@ class AgoraStack(cdk.Stack):
         _a2a_runtimes: dict[str, agentcore.CfnRuntime] = {}
         _a2a_endpoints: dict[str, agentcore.CfnRuntimeEndpoint] = {}
         _a2a_prompt_arns = {
-            "triage": self.triage_prompt.attr_arn,
-            "diagnosis": self.diagnosis_prompt.attr_arn,
-            "resolution": self.resolution_prompt.attr_arn,
+            "triage": self.triage_prompt_version.attr_arn,
+            "diagnosis": self.diagnosis_prompt_version.attr_arn,
+            "resolution": self.resolution_prompt_version.attr_arn,
         }
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
@@ -1247,12 +1254,14 @@ class AgoraStack(cdk.Stack):
                     "bedrock-agentcore:ListAgentRuntimes",
                     "bedrock-agentcore:GetAgentRuntime",
                     "bedrock-agentcore:CreateRegistry",
+                    "bedrock-agentcore:UpdateRegistry",
                     "bedrock-agentcore:ListRegistries",
                     "bedrock-agentcore:CreateRegistryRecord",
                     "bedrock-agentcore:ListRegistryRecords",
                     "bedrock-agentcore:GetRegistryRecord",
                     "bedrock-agentcore:DeleteRegistryRecord",
                     "bedrock-agentcore:DeleteRegistry",
+                    "bedrock-agentcore:SubmitRegistryRecordForApproval",
                     "bedrock-agentcore:CreateWorkloadIdentity",
                     "bedrock-agentcore:ListWorkloadIdentities",
                 ],
@@ -1592,8 +1601,8 @@ class AgoraStack(cdk.Stack):
             value=self.gateway_agent_runtime.attr_agent_runtime_arn,
         )
         cdk.CfnOutput(self, "GuardrailId", value=self.guardrail.attr_guardrail_id)
-        cdk.CfnOutput(self, "GatewayPromptArn", value=self.gateway_prompt.attr_arn)
-        cdk.CfnOutput(self, "TriagePromptArn", value=self.triage_prompt.attr_arn)
-        cdk.CfnOutput(self, "DiagnosisPromptArn", value=self.diagnosis_prompt.attr_arn)
-        cdk.CfnOutput(self, "ResolutionPromptArn", value=self.resolution_prompt.attr_arn)
-        cdk.CfnOutput(self, "DispatcherPromptArn", value=self.dispatcher_prompt.attr_arn)
+        cdk.CfnOutput(self, "GatewayPromptArn", value=self.gateway_prompt_version.attr_arn)
+        cdk.CfnOutput(self, "TriagePromptArn", value=self.triage_prompt_version.attr_arn)
+        cdk.CfnOutput(self, "DiagnosisPromptArn", value=self.diagnosis_prompt_version.attr_arn)
+        cdk.CfnOutput(self, "ResolutionPromptArn", value=self.resolution_prompt_version.attr_arn)
+        cdk.CfnOutput(self, "DispatcherPromptArn", value=self.dispatcher_prompt_version.attr_arn)

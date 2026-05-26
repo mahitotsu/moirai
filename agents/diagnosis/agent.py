@@ -66,7 +66,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         ),
         system_prompt=_SYSTEM_PROMPT,
         tools=[mcp, search_past_tickets],
-        plugins=plugins,
+        plugins=plugins,  # type: ignore[arg-type]
     )
     result = agent.structured_output(DiagnosisResult, message)
     return {"response": result.model_dump_json()}

@@ -381,24 +381,37 @@ def _discover_runtime_arns(control) -> dict[str, str]:
 
 
 def _ensure_registry(control) -> str:
+    """Delete any existing registry (and its records) then create a fresh one with autoApproval."""
     resp = control.list_registries()
     for reg in resp.get("registries", []):
         if reg["name"] == REGISTRY_NAME:
+            registry_id = reg["registryId"]
             status = reg["status"]
-            if status == "READY":
-                return reg["registryId"]
-            if "FAILED" in status:
-                # 壊れた Registry を削除して再作成
-                logger.info(f"Registry in {status}, deleting and recreating")
-                control.delete_registry(registryId=reg["registryId"])
-                break
-            _wait_registry(control, reg["registryId"])
-            return reg["registryId"]
+            logger.info(f"Found existing registry {registry_id} (status={status}), tearing down")
+            if status not in ("DELETING",):
+                try:
+                    _delete_all_records(control, registry_id)
+                except Exception as e:
+                    logger.warning(f"Could not delete records before registry teardown: {e}")
+                try:
+                    control.delete_registry(registryId=registry_id)
+                except Exception as e:
+                    logger.warning(f"Could not delete registry (will reuse): {e}")
+                    return registry_id
+            # Wait for deletion to complete
+            for _ in range(24):
+                r2 = control.list_registries()
+                if not any(r["registryId"] == registry_id for r in r2.get("registries", [])):
+                    logger.info("Registry deleted")
+                    break
+                time.sleep(5)
+            break
 
     resp = control.create_registry(
         name=REGISTRY_NAME,
         description="Agora IT Service Desk — capability catalog for MCP servers and A2A agents",
         authorizerType="AWS_IAM",
+        approvalConfiguration={"autoApproval": True},
     )
     registry_id = resp["registryArn"].split("/")[-1]
     _wait_registry(control, registry_id)
@@ -452,6 +465,17 @@ def _wait_record(control, registry_id: str, record_id: str) -> None:
         time.sleep(5)
 
 
+def _submit_for_approval(control, registry_id: str, record_id: str, name: str) -> None:
+    try:
+        control.submit_registry_record_for_approval(
+            registryId=registry_id,
+            recordId=record_id,
+        )
+        logger.info(f"[{name}] Submitted for approval (id={record_id})")
+    except Exception as e:
+        logger.warning(f"[{name}] Could not submit for approval: {e}")
+
+
 def _register_mcp(control, registry_id: str, server: dict, runtime_arn: str, existing: dict) -> None:
     name = server["record_name"]
     if name in existing:
@@ -482,6 +506,7 @@ def _register_mcp(control, registry_id: str, server: dict, runtime_arn: str, exi
     )
     record_id = resp["recordArn"].split("/")[-1]
     _wait_record(control, registry_id, record_id)
+    _submit_for_approval(control, registry_id, record_id, name)
     logger.info(f"[{name}] Registered as MCP (id={record_id})")
 
 
@@ -502,6 +527,7 @@ def _register_skill(control, registry_id: str, skill: dict, skill_md: str, exist
     )
     record_id = resp["recordArn"].split("/")[-1]
     _wait_record(control, registry_id, record_id)
+    _submit_for_approval(control, registry_id, record_id, name)
     logger.info(f"[{name}] Registered as AGENT_SKILLS (id={record_id})")
 
 
@@ -531,6 +557,7 @@ def _register_mcp_gateway(control, registry_id: str, gateway_url: str, existing:
     )
     record_id = resp["recordArn"].split("/")[-1]
     _wait_record(control, registry_id, record_id)
+    _submit_for_approval(control, registry_id, record_id, name)
     logger.info(f"[{name}] Registered MCP Gateway URL (id={record_id})")
 
 
@@ -567,6 +594,7 @@ def _register_a2a(control, registry_id: str, agent: dict, runtime_arn: str, exis
     )
     record_id = resp["recordArn"].split("/")[-1]
     _wait_record(control, registry_id, record_id)
+    _submit_for_approval(control, registry_id, record_id, name)
     logger.info(f"[{name}] Registered as A2A (id={record_id})")
 
 
@@ -602,9 +630,8 @@ def handler(event: dict, context: object) -> dict:
     registry_id = _ensure_registry(control)
     logger.info(f"Registry ID: {registry_id}")
 
-    logger.info(f"{request_type}: clearing existing records before re-registration")
-    _delete_all_records(control, registry_id)
-
+    # _ensure_registry already wiped records via delete+recreate.
+    # existing stays empty so every record is registered fresh.
     existing: dict = {}
 
     if mcp_gateway_url:

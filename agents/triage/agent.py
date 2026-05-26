@@ -44,7 +44,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
             cache_config=CacheConfig(strategy="auto"),
         ),
         system_prompt=_SYSTEM_PROMPT,
-        plugins=plugins,
+        plugins=plugins,  # type: ignore[arg-type]
     )
     result = agent.structured_output(TriageResult, message)
     return {"response": result.model_dump_json()}
