@@ -174,6 +174,46 @@ def fetch_system_prompt(arn: str) -> str:
     return _cache[cache_key]  # type: ignore[return-value]
 
 
+def discover_skills(skill_names: list[str]) -> list:
+    """Return Strands Skill objects for the given skill names from the Registry.
+
+    Searches AGENT_SKILLS records whose name matches "agora-{skill_name}".
+    Results are cached at module level; call once per container lifetime.
+    """
+    from strands import Skill
+
+    cache_key = f"skills:{','.join(sorted(skill_names))}"
+    if cache_key in _cache:
+        return _cache[cache_key]  # type: ignore[return-value]
+
+    results: list = []
+    name_set = {f"agora-{n}" for n in skill_names}
+    for rec in _list_all_records("AGENT_SKILLS"):
+        if rec.get("name") not in name_set:
+            continue
+        if rec.get("status") not in _ACTIVE_STATUSES:
+            logger.warning("Skill record '%s' not in active status — skipping", rec.get("name"))
+            continue
+        try:
+            detail = _control.get_registry_record(
+                registryId=_registry_id(), recordId=rec["recordId"]
+            )
+            skill_md = (
+                detail.get("descriptors", {})
+                .get("agentSkills", {})
+                .get("skillMd", {})
+            )
+            markdown = skill_md.get("inlineContent", "") if isinstance(skill_md, dict) else skill_md
+            if markdown:
+                results.append(Skill.from_content(markdown))
+                logger.info("Loaded skill '%s' from Registry", rec["name"])
+        except Exception:
+            logger.exception("Failed to load skill '%s'", rec.get("name"))
+
+    _cache[cache_key] = results
+    return results
+
+
 def discover_a2a_agents() -> list[dict]:
     """Return all A2A agents with capability='a2a-agent'.
 

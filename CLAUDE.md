@@ -15,6 +15,7 @@ moirai/
 ├── services/           FastAPIサービス (ticket-service, asset-service)
 ├── mcp-servers/        FastMCPサーバー (stackoverflow, github-issues, wikipedia)
 ├── agents/             A2Aエージェント (gateway, triage, diagnosis, resolution)
+├── skills/             AgentCore Registry Skill定義 (SKILL.md — uv workspaceスコープ外)
 ├── infrastructure/     AWS CDK (Python)
 └── ui/                 React SPA
 ```

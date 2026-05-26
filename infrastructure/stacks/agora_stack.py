@@ -51,6 +51,7 @@ class _LocalPipBundler:
 _ROOT = Path(__file__).parent.parent.parent
 _UI_DIR = str(_ROOT / "ui")
 _AGENTS_DIR = _ROOT / "agents"
+_SKILLS_DIR = _ROOT / "skills"
 _MCP_DIR = _ROOT / "mcp-servers"
 _SERVICES_DIR = _ROOT / "services"
 _LAMBDA_DIR = Path(__file__).parent.parent / "lambda"
@@ -80,7 +81,7 @@ _DYNAMO_RETRY_ATTEMPTS = 2
 
 # ── AgentCore ─────────────────────────────────────────────────────────────
 _GUARDRAIL_VERSION = "DRAFT"
-_CATALOG_VERSION = "14"
+_CATALOG_VERSION = "16"
 _API_KEY_LENGTH = 32
 
 # ── DynamoDB インデックス名 ────────────────────────────────────────────────
@@ -1289,6 +1290,11 @@ class AgoraStack(cdk.Stack):
         registry_provider = cr.Provider(
             self, "RegistryProvider", on_event_handler=registry_fn
         )
+        _skill_names = [
+            "incident-severity-classification",
+            "api-error-diagnosis-runbook",
+            "resolution-documentation-standard",
+        ]
         cdk.CustomResource(
             self,
             "RegistryCatalog",
@@ -1296,6 +1302,10 @@ class AgoraStack(cdk.Stack):
             properties={
                 "CatalogVersion": _CATALOG_VERSION,
                 "McpGatewayUrl": self.agentcore_gateway.attr_gateway_url,
+                "SkillContents": {
+                    name: (_SKILLS_DIR / name / "SKILL.md").read_text()
+                    for name in _skill_names
+                },
             },
         )
 

@@ -116,6 +116,7 @@ def test_update_nonexistent(repo: TicketRepository) -> None:
 def test_list_by_status(repo: TicketRepository) -> None:
     repo.create(TicketCreate(title="Open 1", description="d", category="database", severity="low"))
     repo.create(TicketCreate(title="Open 2", description="d", category="network", severity="low"))
+    time.sleep(3)  # GSI eventual consistency
     tickets = repo.list_by_status("open")
     assert len(tickets) >= 2
     assert all(t.status == "open" for t in tickets)
@@ -123,7 +124,7 @@ def test_list_by_status(repo: TicketRepository) -> None:
 
 def test_list_by_category(repo: TicketRepository) -> None:
     repo.create(TicketCreate(title="Cat test", description="d", category="other", severity="low"))
-    time.sleep(1)  # GSI eventual consistency
+    time.sleep(3)  # GSI eventual consistency
     tickets = repo.list_by_category("other")
     assert len(tickets) >= 1
     assert all(t.category == "other" for t in tickets)

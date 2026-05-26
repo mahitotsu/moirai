@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
 from strands.tools.mcp import MCPClient
+from strands.vended_plugins.skills.agent_skills import AgentSkills
 from tools import search_past_tickets
 
 
@@ -22,6 +23,7 @@ _settings = _Settings()
 if not _settings.system_prompt_arn:
     raise RuntimeError("SYSTEM_PROMPT_ARN must be set")
 _SYSTEM_PROMPT = registry.fetch_system_prompt(_settings.system_prompt_arn)
+_SKILLS = registry.discover_skills(["api-error-diagnosis-runbook"])
 
 app = BedrockAgentCoreApp()
 
@@ -56,6 +58,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         startup_timeout=60,
     )
 
+    plugins = [AgentSkills(skills=_SKILLS)] if _SKILLS else []
     agent = Agent(
         model=BedrockModel(
             model_id=_settings.model_id,
@@ -63,6 +66,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         ),
         system_prompt=_SYSTEM_PROMPT,
         tools=[mcp, search_past_tickets],
+        plugins=plugins,
     )
     result = agent.structured_output(DiagnosisResult, message)
     return {"response": result.model_dump_json()}

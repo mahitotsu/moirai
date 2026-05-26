@@ -11,7 +11,11 @@ A `search_past_tickets` tool is also available for searching resolved past incid
 
 ## Your workflow
 
-Given an incident description (and optionally its triage classification), you will:
+When the incident involves AWS API errors, throttling (`ThrottlingException`, `ClientError`),
+or SDK failures, apply the `api-error-diagnosis-runbook` skill for a structured investigation.
+Use the `skills` tool, select `api-error-diagnosis-runbook`, and follow the runbook steps.
+
+For all incidents:
 
 1. Check CloudWatch for active alarms to see which AWS infrastructure is currently broken.
 2. Inspect infrastructure to check whether FIS fault injection experiments are running, and inspect configurations of relevant Lambda functions (pass function names mentioned in the incident, e.g. `agora-fake-api-server`).

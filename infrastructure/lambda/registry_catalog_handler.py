@@ -283,6 +283,28 @@ MCP_CATALOG: list[dict] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Agent skills catalog — SKILL.md content is passed via CloudFormation resource
+# properties (SkillContents) so that editing a SKILL.md triggers re-registration.
+# ---------------------------------------------------------------------------
+SKILL_CATALOG: list[dict] = [
+    {
+        "record_name": "agora-incident-severity-classification",
+        "skill_name": "incident-severity-classification",
+        "description": "Agora IT ops organization-approved criteria for classifying incident severity and category",
+    },
+    {
+        "record_name": "agora-api-error-diagnosis-runbook",
+        "skill_name": "api-error-diagnosis-runbook",
+        "description": "Approved runbook for diagnosing AWS API throttling errors and SDK client failures",
+    },
+    {
+        "record_name": "agora-resolution-documentation-standard",
+        "skill_name": "resolution-documentation-standard",
+        "description": "Organizational standard for IT incident resolution documentation and ticket closure",
+    },
+]
+
+# ---------------------------------------------------------------------------
 # A2A agent catalog — mirrors _A2A_AGENTS + _GATEWAY_AGENT in agent_core_stack.py
 # ---------------------------------------------------------------------------
 A2A_CATALOG: list[dict] = [
@@ -463,6 +485,26 @@ def _register_mcp(control, registry_id: str, server: dict, runtime_arn: str, exi
     logger.info(f"[{name}] Registered as MCP (id={record_id})")
 
 
+def _register_skill(control, registry_id: str, skill: dict, skill_md: str, existing: dict) -> None:
+    name = skill["record_name"]
+    if name in existing:
+        logger.info(f"[{name}] Already registered — skipping")
+        return
+
+    resp = control.create_registry_record(
+        registryId=registry_id,
+        name=name,
+        description=skill["description"],
+        descriptorType="AGENT_SKILLS",
+        descriptors={
+            "agentSkills": {"skillMd": {"inlineContent": skill_md}},
+        },
+    )
+    record_id = resp["recordArn"].split("/")[-1]
+    _wait_record(control, registry_id, record_id)
+    logger.info(f"[{name}] Registered as AGENT_SKILLS (id={record_id})")
+
+
 def _register_mcp_gateway(control, registry_id: str, gateway_url: str, existing: dict) -> None:
     name = "agora-mcp-gateway"
     if name in existing:
@@ -551,7 +593,9 @@ def handler(event: dict, context: object) -> dict:
 
     # Create or Update: always clear and re-register so ARNs are always current.
     # On Create this also evicts any stale records from manual registration.
-    mcp_gateway_url: str = event.get("ResourceProperties", {}).get("McpGatewayUrl", "")
+    props: dict = event.get("ResourceProperties", {})
+    mcp_gateway_url: str = props.get("McpGatewayUrl", "")
+    skill_contents: dict = props.get("SkillContents", {})
     runtime_arns = _discover_runtime_arns(control)
     logger.info(f"Discovered {len(runtime_arns)} active runtimes: {list(runtime_arns.keys())}")
 
@@ -567,6 +611,13 @@ def handler(event: dict, context: object) -> dict:
         _register_mcp_gateway(control, registry_id, mcp_gateway_url, existing)
     else:
         logger.warning("McpGatewayUrl not provided — skipping MCP Gateway record")
+
+    for skill in SKILL_CATALOG:
+        skill_md = skill_contents.get(skill["skill_name"], "")
+        if not skill_md:
+            logger.warning(f"[{skill['record_name']}] No SKILL.md content in properties — skipping")
+            continue
+        _register_skill(control, registry_id, skill, skill_md, existing)
 
     for server in MCP_CATALOG:
         if server["runtime_name"] is not None:
