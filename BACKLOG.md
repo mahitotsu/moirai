@@ -5,7 +5,7 @@
 ## 現在のフォーカス
 
 **フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: `make cdk-deploy` → Registry/Gateway 整合確認 → E2Eデモ再確認
+**次のタスク**: `make cdk-deploy` → Bedrock Prompt Management デプロイ確認 → E2Eデモ再確認
 
 ---
 
@@ -112,6 +112,13 @@
   - AgentCore Runtime (コンテナ) → Lambda + Function URL (AWS_IAM) に変更
   - `LambdaFunctionURLEventHandler` で stdio↔HTTP ブリッジ
   - `mcp_server` Gateway Target として登録 (service="lambda" SigV4)
+- [x] Bedrock Prompt Management 統合 (38ca3f3 2026-05-26):
+  - 全4エージェントのシステムプロンプトを Bedrock PM から動的取得 (フォールバック廃止・フェイルファスト)
+  - ticket-dispatcher のユーザープロンプトテンプレートも Bedrock PM 管理化 (`{{variable}}` プレースホルダ展開)
+  - CDK: 5つの CfnPrompt リソース追加 + bedrock:GetPrompt IAM 権限付与
+  - ticket-service: GET /prompts エンドポイント追加 (UI向け live プロンプト取得)
+  - CloudFront: /api/prompts → ticket-service ルーティング追加
+  - SystemTab: デプロイ中の実プロンプトをリアルタイム表示 (ハードコード全廃)
 - [x] Registry/Gateway 不整合修正 (f1a1520 2026-05-26):
   - agora-cloudwatch: runtime_name=None に修正 (Lambda wrap)・description 87文字に短縮 (schema ValidationException 修正)
   - agora-ticket-service: Registry MCP エントリ新規追加
