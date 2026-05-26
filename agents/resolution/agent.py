@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import registry
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from mcp.client.streamable_http import streamablehttp_client
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
@@ -14,12 +14,24 @@ from strands.tools.mcp import MCPClient
 
 class _Settings(BaseSettings):
     model_id: str = "us.anthropic.claude-sonnet-4-6"
+    system_prompt_arn: str = ""
 
 
 _settings = _Settings()
-_SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
+if not _settings.system_prompt_arn:
+    raise RuntimeError("SYSTEM_PROMPT_ARN must be set")
+_SYSTEM_PROMPT = registry.fetch_system_prompt(_settings.system_prompt_arn)
 
 app = BedrockAgentCoreApp()
+
+
+class ResolutionResult(BaseModel):
+    root_cause_summary: str
+    resolution_steps: list[str]
+    preventive_measures: list[str]
+    lesson_learned: str
+    estimated_time_minutes: int
+    ticket_id: str | None
 
 
 @app.entrypoint
@@ -40,8 +52,8 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         system_prompt=_SYSTEM_PROMPT,
         tools=[mcp],
     )
-    result = agent(message)
-    return {"response": str(result)}
+    result = agent.structured_output(ResolutionResult, message)
+    return {"response": result.model_dump_json()}
 
 
 if __name__ == "__main__":

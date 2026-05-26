@@ -92,8 +92,12 @@ def test_invoke_gateway_agent_builds_prompt_with_ticket_info() -> None:
         )
         return resp_mock
 
+    _template = "ticket={{ticket_id}} title={{title}} severity={{severity}} desc={{description}}"
     arn = "arn:aws:bedrock-agentcore:::runtime/test"
-    with patch.object(lambda_function, "_AGENT_RUNTIME_ARN", arn):
+    with (
+        patch.object(lambda_function, "_AGENT_RUNTIME_ARN", arn),
+        patch.object(lambda_function, "_get_prompt_template", return_value=_template),
+    ):
         lambda_function._agentcore.invoke_agent_runtime.side_effect = fake_invoke
         lambda_function._invoke_gateway_agent("t-99", "API Error", "critical", "Throttling on EC2")
 

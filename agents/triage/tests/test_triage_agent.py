@@ -6,6 +6,14 @@ import sys
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+os.environ.setdefault("SYSTEM_PROMPT_ARN", "arn:aws:bedrock:us-east-1:123456789012:prompt/dummy")
+
+# registry モジュールは Registry API が必要なため、テストではスタブ化する
+_registry_mock = MagicMock()
+_registry_mock.fetch_system_prompt.return_value = (
+    "You are the Triage Agent. Classify severity and category."
+)
+sys.modules["registry"] = _registry_mock
 
 _spec = importlib.util.spec_from_file_location(
     "triage_agent", os.path.join(os.path.dirname(__file__), "..", "agent.py")

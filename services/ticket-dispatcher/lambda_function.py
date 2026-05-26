@@ -3,16 +3,43 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 
 import boto3
 
 _AGENT_RUNTIME_ARN = os.environ.get("AGENT_RUNTIME_ARN", "")
+_DISPATCHER_PROMPT_ARN = os.environ.get("DISPATCHER_PROMPT_ARN", "")
 _AGENT_QUALIFIER = "DEFAULT"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 _agentcore = boto3.client("bedrock-agentcore")
+_bedrock_agent = boto3.client("bedrock-agent")
+
+_prompt_template_cache: str | None = None
+
+
+def _get_prompt_template() -> str:
+    global _prompt_template_cache
+    if _prompt_template_cache is None:
+        if not _DISPATCHER_PROMPT_ARN:
+            raise RuntimeError("DISPATCHER_PROMPT_ARN must be set")
+        resp = _bedrock_agent.get_prompt(promptIdentifier=_DISPATCHER_PROMPT_ARN)
+        variants = resp.get("variants", [])
+        if not variants:
+            raise RuntimeError(f"No variants found for prompt ARN: {_DISPATCHER_PROMPT_ARN}")
+        _prompt_template_cache = variants[0]["templateConfiguration"]["text"]["text"]
+        logger.info("Loaded dispatcher prompt template from Bedrock Prompt Management")
+    return _prompt_template_cache
+
+
+def _expand_template(template: str, **variables: str) -> str:
+    """Replace {{variable}} placeholders with provided values."""
+    result = template
+    for key, value in variables.items():
+        result = re.sub(r"\{\{" + re.escape(key) + r"\}\}", value, result)
+    return result
 
 
 def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description: str) -> None:
@@ -21,12 +48,13 @@ def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description
         logger.warning("AGENT_RUNTIME_ARN not set — skipping agent invocation")
         return
 
-    message = (
-        f"新規インシデントチケット {ticket_id} が起票されました。\n"
-        f"タイトル: {title}\n"
-        f"重要度: {severity}\n"
-        f"概要: {description}\n"
-        "Triage → Diagnosis → Resolution パイプラインによる診断を開始してください。"
+    template = _get_prompt_template()
+    message = _expand_template(
+        template,
+        ticket_id=ticket_id,
+        title=title,
+        severity=severity,
+        description=description,
     )
     payload = json.dumps({"prompt": message, "user_id": "ticket-dispatcher"}).encode()
 

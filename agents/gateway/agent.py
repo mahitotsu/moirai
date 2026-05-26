@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from pathlib import Path
 from typing import Any
 
 import boto3
@@ -22,10 +21,13 @@ class _Settings(BaseSettings):
     model_id: str = "us.anthropic.claude-sonnet-4-6"
     guardrail_id: str = ""
     guardrail_version: str = "DRAFT"
+    system_prompt_arn: str = ""
 
 
 _settings = _Settings()
-_SYSTEM_PROMPT = (Path(__file__).parent / "system_prompt.md").read_text()
+if not _settings.system_prompt_arn:
+    raise RuntimeError("SYSTEM_PROMPT_ARN must be set")
+_SYSTEM_PROMPT = registry.fetch_system_prompt(_settings.system_prompt_arn)
 
 _agentcore = boto3.client("bedrock-agentcore")
 app = BedrockAgentCoreApp()
@@ -95,13 +97,8 @@ def invoke_resolution(diagnosis_result: str, ticket_id: str = "") -> str:
     arn = registry.get_agent_runtime_arn(registry.RESOLUTION_AGENT_RECORD)
     message = diagnosis_result
     if ticket_id:
-        message = f"ticket_id: {ticket_id}\n\n{diagnosis_result}"
+        message = f"{diagnosis_result}\n\nExisting ticket ID to update: {ticket_id}"
     return _invoke_sub_agent(arn, message)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 @app.entrypoint

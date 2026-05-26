@@ -22,6 +22,8 @@ import logging
 
 import boto3
 
+_bedrock_agent = boto3.client("bedrock-agent")
+
 logger = logging.getLogger(__name__)
 
 REGISTRY_NAME = "agora_registry"
@@ -152,6 +154,24 @@ def discover_by_capability(capability: str) -> list[dict]:
             "endpoint_id": content.get("endpointId", ""),
         })
     return results
+
+
+def fetch_system_prompt(arn: str) -> str:
+    """Fetch prompt text from Bedrock Prompt Management by ARN.
+
+    Fetches the default variant's text template. Raises RuntimeError on failure.
+    Module-level cache ensures at most one API call per container lifetime.
+    """
+    cache_key = f"prompt:{arn}"
+    if cache_key not in _cache:
+        resp = _bedrock_agent.get_prompt(promptIdentifier=arn)
+        variants = resp.get("variants", [])
+        if not variants:
+            raise RuntimeError(f"No variants found for prompt ARN: {arn}")
+        text = variants[0]["templateConfiguration"]["text"]["text"]
+        _cache[cache_key] = text
+        logger.info("Fetched system prompt from Bedrock Prompt Management: %s", arn)
+    return _cache[cache_key]  # type: ignore[return-value]
 
 
 def discover_a2a_agents() -> list[dict]:

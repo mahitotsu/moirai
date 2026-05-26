@@ -12,6 +12,7 @@ from app.settings import Settings
 
 settings = Settings()  # type: ignore[call-arg]
 _dynamo_client = boto3.client("dynamodb")
+_bedrock_agent_client = boto3.client("bedrock-agent")
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Ticket Service")
@@ -71,3 +72,26 @@ def update_ticket(ticket_id: str, data: TicketUpdate, repo: RepoDep) -> Ticket:
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket
+
+
+def _fetch_prompt_text(arn: str) -> str:
+    if not arn:
+        return ""
+    try:
+        resp = _bedrock_agent_client.get_prompt(promptIdentifier=arn)
+        variants = resp.get("variants", [])
+        if variants:
+            return variants[0]["templateConfiguration"]["text"]["text"]
+    except Exception:
+        pass
+    return ""
+
+
+@app.get("/prompts")
+def get_prompts() -> dict[str, str]:
+    return {
+        "gateway": _fetch_prompt_text(settings.gateway_prompt_arn),
+        "triage": _fetch_prompt_text(settings.triage_prompt_arn),
+        "diagnosis": _fetch_prompt_text(settings.diagnosis_prompt_arn),
+        "resolution": _fetch_prompt_text(settings.resolution_prompt_arn),
+    }

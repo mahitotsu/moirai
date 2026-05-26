@@ -274,6 +274,12 @@ class AgoraStack(cdk.Stack):
                 resources=[self.services_api_key_secret.secret_arn],
             )
         )
+        self.ticket_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:GetPrompt"],
+                resources=[f"arn:aws:bedrock:{self.region}:{self.account}:prompt/*"],
+            )
+        )
 
         self.chat_proxy_role = iam.Role(
             self,
@@ -420,6 +426,10 @@ class AgoraStack(cdk.Stack):
                 [f"arn:aws:bedrock:{self.region}:{self.account}:guardrail/*"],
             ),
             (
+                ["bedrock:GetPrompt"],
+                [f"arn:aws:bedrock:{self.region}:{self.account}:prompt/*"],
+            ),
+            (
                 [
                     "xray:PutTraceSegments",
                     "xray:PutSpans",
@@ -522,6 +532,80 @@ class AgoraStack(cdk.Stack):
         )
 
         # =====================================================================
+        # BEDROCK PROMPT MANAGEMENT — エージェント system prompt + dispatcher template
+        # =====================================================================
+        def _make_text_prompt(
+            logical_id: str,
+            name: str,
+            description: str,
+            text: str,
+            input_variables: list[str] | None = None,
+        ) -> bedrock.CfnPrompt:
+            vars_cfg = (
+                [bedrock.CfnPrompt.PromptInputVariableProperty(name=v) for v in input_variables]
+                if input_variables
+                else []
+            )
+            return bedrock.CfnPrompt(
+                self,
+                logical_id,
+                name=name,
+                description=description,
+                default_variant="default",
+                variants=[
+                    bedrock.CfnPrompt.PromptVariantProperty(
+                        name="default",
+                        template_type="TEXT",
+                        template_configuration=bedrock.CfnPrompt.PromptTemplateConfigurationProperty(
+                            text=bedrock.CfnPrompt.TextPromptTemplateConfigurationProperty(
+                                text=text,
+                                input_variables=vars_cfg,
+                            )
+                        ),
+                    )
+                ],
+                tags={"project": "agora"},
+            )
+
+        self.gateway_prompt = _make_text_prompt(
+            "GatewaySystemPrompt",
+            "agora-gateway-system-prompt",
+            "Gateway Agent system prompt",
+            (_AGENTS_DIR / "gateway" / "system_prompt.md").read_text(),
+        )
+        self.triage_prompt = _make_text_prompt(
+            "TriageSystemPrompt",
+            "agora-triage-system-prompt",
+            "Triage Agent system prompt",
+            (_AGENTS_DIR / "triage" / "system_prompt.md").read_text(),
+        )
+        self.diagnosis_prompt = _make_text_prompt(
+            "DiagnosisSystemPrompt",
+            "agora-diagnosis-system-prompt",
+            "Diagnosis Agent system prompt",
+            (_AGENTS_DIR / "diagnosis" / "system_prompt.md").read_text(),
+        )
+        self.resolution_prompt = _make_text_prompt(
+            "ResolutionSystemPrompt",
+            "agora-resolution-system-prompt",
+            "Resolution Agent system prompt",
+            (_AGENTS_DIR / "resolution" / "system_prompt.md").read_text(),
+        )
+        self.dispatcher_prompt = _make_text_prompt(
+            "DispatcherUserPrompt",
+            "agora-dispatcher-user-prompt",
+            "ticket-dispatcher user prompt template for Gateway Agent",
+            (
+                "新規インシデントチケット {{ticket_id}} が起票されました。\n"
+                "タイトル: {{title}}\n"
+                "重要度: {{severity}}\n"
+                "概要: {{description}}\n"
+                "Triage → Diagnosis → Resolution パイプラインによる診断を開始してください。"
+            ),
+            input_variables=["ticket_id", "title", "severity", "description"],
+        )
+
+        # =====================================================================
         # ECR IMAGE ASSETS — CDK が自動ビルド & プッシュ
         # =====================================================================
         agent_images: dict[str, ecr_assets.DockerImageAsset] = {}
@@ -580,6 +664,7 @@ class AgoraStack(cdk.Stack):
                 "MODEL_ID": _MODEL_SONNET,
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
                 "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
+                "SYSTEM_PROMPT_ARN": self.gateway_prompt.attr_arn,
             },
             tags={"capability": "gateway", "project": "agora"},
         )
@@ -622,6 +707,10 @@ class AgoraStack(cdk.Stack):
                 **_common_env,
                 "TABLE_NAME": self.tickets_table.table_name,
                 "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
+                "GATEWAY_PROMPT_ARN": self.gateway_prompt.attr_arn,
+                "TRIAGE_PROMPT_ARN": self.triage_prompt.attr_arn,
+                "DIAGNOSIS_PROMPT_ARN": self.diagnosis_prompt.attr_arn,
+                "RESOLUTION_PROMPT_ARN": self.resolution_prompt.attr_arn,
             },
         )
 
@@ -676,6 +765,12 @@ class AgoraStack(cdk.Stack):
                 resources=["*"],
             )
         )
+        _dispatcher_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:GetPrompt"],
+                resources=[f"arn:aws:bedrock:{self.region}:{self.account}:prompt/*"],
+            )
+        )
 
         _dispatcher_dlq = sqs.Queue(
             self,
@@ -715,6 +810,7 @@ class AgoraStack(cdk.Stack):
             environment={
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
                 "AGENT_RUNTIME_ARN": self.gateway_agent_runtime.attr_agent_runtime_arn,
+                "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt.attr_arn,
             },
         )
         # DynamoEventSource の内部実装は Grant.addToPrincipal(scope=...) を呼ぶ (deprecated)。
@@ -892,6 +988,19 @@ class AgoraStack(cdk.Stack):
                         )
                     ],
                 ),
+                "/api/prompts": cloudfront.BehaviorOptions(
+                    origin=ticket_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                    function_associations=[
+                        cloudfront.FunctionAssociation(
+                            event_type=cloudfront.FunctionEventType.VIEWER_REQUEST,
+                            function=strip_api_fn,
+                        )
+                    ],
+                ),
             },
             default_root_object="index.html",
             error_responses=[
@@ -1013,8 +1122,14 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         _a2a_runtimes: dict[str, agentcore.CfnRuntime] = {}
         _a2a_endpoints: dict[str, agentcore.CfnRuntimeEndpoint] = {}
+        _a2a_prompt_arns = {
+            "triage": self.triage_prompt.attr_arn,
+            "diagnosis": self.diagnosis_prompt.attr_arn,
+            "resolution": self.resolution_prompt.attr_arn,
+        }
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
+            env_vars["SYSTEM_PROMPT_ARN"] = _a2a_prompt_arns[agent["name"]]
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,
@@ -1467,3 +1582,8 @@ class AgoraStack(cdk.Stack):
             value=self.gateway_agent_runtime.attr_agent_runtime_arn,
         )
         cdk.CfnOutput(self, "GuardrailId", value=self.guardrail.attr_guardrail_id)
+        cdk.CfnOutput(self, "GatewayPromptArn", value=self.gateway_prompt.attr_arn)
+        cdk.CfnOutput(self, "TriagePromptArn", value=self.triage_prompt.attr_arn)
+        cdk.CfnOutput(self, "DiagnosisPromptArn", value=self.diagnosis_prompt.attr_arn)
+        cdk.CfnOutput(self, "ResolutionPromptArn", value=self.resolution_prompt.attr_arn)
+        cdk.CfnOutput(self, "DispatcherPromptArn", value=self.dispatcher_prompt.attr_arn)

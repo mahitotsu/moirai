@@ -6,9 +6,15 @@ import sys
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("GUARDRAIL_ID", "")
+os.environ.setdefault("SYSTEM_PROMPT_ARN", "arn:aws:bedrock:us-east-1:123456789012:prompt/dummy")
 
 # registry モジュールは Registry API が必要なため、テストではスタブ化する
-sys.modules.setdefault("registry", MagicMock())
+_registry_mock = MagicMock()
+_registry_mock.fetch_system_prompt.return_value = (
+    "You are the Gateway Agent. Orchestrate the Triage, Diagnosis, and Resolution pipeline. "
+    "Handle user queries and automatic ticket-driven diagnostic requests."
+)
+sys.modules["registry"] = _registry_mock
 
 _spec = importlib.util.spec_from_file_location(
     "gateway_agent", os.path.join(os.path.dirname(__file__), "..", "agent.py")

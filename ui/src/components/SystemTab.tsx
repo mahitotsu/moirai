@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Copy, Check, RefreshCw, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { AGENTS, MCPS, type AgentDef, type McpDef, type ToolDef } from "@/data/catalog";
+import { fetchAgentPrompts, type AgentPrompts } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Copy button
@@ -37,7 +38,7 @@ function ToolList({ tools }: { tools: ToolDef[] }) {
   if (tools.length === 0) {
     return (
       <p className="text-xs italic text-muted-foreground">
-        ツールなし（JSON のみを出力する分類エージェント）
+        ツールなし（構造化出力のみを返す分類エージェント）
       </p>
     );
   }
@@ -56,7 +57,7 @@ function ToolList({ tools }: { tools: ToolDef[] }) {
 // ---------------------------------------------------------------------------
 // Agent card
 // ---------------------------------------------------------------------------
-function AgentCard({ agent }: { agent: AgentDef }) {
+function AgentCard({ agent, livePrompt, fetchError }: { agent: AgentDef; livePrompt: string | null; fetchError: boolean }) {
   const [promptOpen, setPromptOpen] = useState(false);
 
   const protocolVariant =
@@ -73,6 +74,11 @@ function AgentCard({ agent }: { agent: AgentDef }) {
           <Badge variant="outline" className="font-mono text-xs">
             {agent.model}
           </Badge>
+          {livePrompt !== null && (
+            <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+              Bedrock Prompt Management
+            </Badge>
+          )}
         </div>
         <CardDescription className="text-xs leading-relaxed mt-1">
           {agent.description}
@@ -90,40 +96,53 @@ function AgentCard({ agent }: { agent: AgentDef }) {
 
         {/* System Prompt — collapsible */}
         <div>
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setPromptOpen((v) => !v)}
-              className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {promptOpen ? (
-                <ChevronDown className="h-3 w-3" />
-              ) : (
-                <ChevronRight className="h-3 w-3" />
-              )}
-              System Prompt
-            </button>
-            {promptOpen && <CopyButton text={agent.systemPrompt} />}
-          </div>
-
-          {promptOpen && (
-            <div className="mt-2 rounded-md border bg-muted/40 px-3 py-2 overflow-auto max-h-96">
-              <div
-                className={`
-                  prose prose-sm max-w-none
-                  prose-p:my-1 prose-p:leading-relaxed
-                  prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1
-                  prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
-                  prose-strong:font-semibold
-                  prose-code:text-xs prose-code:rounded prose-code:px-0.5 prose-code:bg-muted
-                  prose-pre:text-xs prose-pre:my-1 prose-pre:bg-muted
-                  prose-table:text-xs
-                  prose-td:px-2 prose-th:px-2
-                `}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {agent.systemPrompt}
-                </ReactMarkdown>
+          {fetchError ? (
+            <div className="flex items-center gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              Bedrock Prompt Management から取得できませんでした
+            </div>
+          ) : livePrompt !== null ? (
+            <>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setPromptOpen((v) => !v)}
+                  className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {promptOpen ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                  System Prompt
+                </button>
+                {promptOpen && <CopyButton text={livePrompt} />}
               </div>
+              {promptOpen && (
+                <div className="mt-2 rounded-md border bg-muted/40 px-3 py-2 overflow-auto max-h-96">
+                  <div
+                    className={`
+                      prose prose-sm max-w-none
+                      prose-p:my-1 prose-p:leading-relaxed
+                      prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1
+                      prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
+                      prose-strong:font-semibold
+                      prose-code:text-xs prose-code:rounded prose-code:px-0.5 prose-code:bg-muted
+                      prose-pre:text-xs prose-pre:my-1 prose-pre:bg-muted
+                      prose-table:text-xs
+                      prose-td:px-2 prose-th:px-2
+                    `}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {livePrompt}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              取得中...
             </div>
           )}
         </div>
@@ -184,13 +203,64 @@ function SectionHeader({ title, count }: { title: string; count: number }) {
 // Main tab component
 // ---------------------------------------------------------------------------
 export default function SystemTab() {
+  const [livePrompts, setLivePrompts] = useState<AgentPrompts | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+
+  const loadPrompts = async () => {
+    setLoading(true);
+    setFetchError(false);
+    try {
+      const prompts = await fetchAgentPrompts();
+      setLivePrompts(prompts);
+    } catch {
+      setFetchError(true);
+      setLivePrompts(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPrompts();
+  }, []);
+
+  const promptMap: Record<string, string | null> = livePrompts
+    ? {
+        gateway: livePrompts.gateway || null,
+        triage: livePrompts.triage || null,
+        diagnosis: livePrompts.diagnosis || null,
+        resolution: livePrompts.resolution || null,
+      }
+    : {};
+
   return (
     <div className="flex h-full flex-col gap-6 p-4 overflow-auto">
       {/* Banner */}
       <div className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
         <span className="font-medium text-foreground">AIの判断基準はすべてテキストで定義されています。</span>
-        {" "}System Prompt を編集するだけで、コードを変更せずにエージェントの分類基準・検索戦略・解決フォーマットを改善できます。
-        各プロンプトの▶をクリックして内容を確認し、必要に応じてコピーして編集してください。
+        {" "}System Prompt は Bedrock Prompt Management で管理されており、コードを変更せずにエージェントの動作を改善できます。
+        各プロンプトの▶をクリックして現在デプロイ中の内容を確認できます。
+        {loading && (
+          <span className="ml-2 inline-flex items-center gap-1 text-muted-foreground">
+            <RefreshCw className="h-3 w-3 animate-spin" />
+            Bedrock から取得中...
+          </span>
+        )}
+        {!loading && fetchError && (
+          <span className="ml-2 text-destructive font-medium">
+            Bedrock Prompt Management への接続に失敗しました
+          </span>
+        )}
+        {!loading && !fetchError && (
+          <button
+            onClick={loadPrompts}
+            className="ml-2 inline-flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            <RefreshCw className="h-3 w-3" />
+            更新
+          </button>
+        )}
       </div>
 
       {/* Agents section */}
@@ -198,7 +268,12 @@ export default function SystemTab() {
         <SectionHeader title="AIエージェント" count={AGENTS.length} />
         <div className="grid gap-4 lg:grid-cols-2">
           {AGENTS.map((agent) => (
-            <AgentCard key={agent.id} agent={agent} />
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              livePrompt={loading ? null : (promptMap[agent.id] ?? null)}
+              fetchError={!loading && fetchError}
+            />
           ))}
         </div>
       </div>
