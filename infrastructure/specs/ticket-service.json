@@ -66,6 +66,7 @@
       },
       "get": {
         "summary": "List Tickets",
+        "description": "List incident tickets, optionally filtered by status or category. Use status=resolved to retrieve past resolved incidents for diagnosis reference.",
         "operationId": "list_tickets_tickets_get",
         "parameters": [
           {

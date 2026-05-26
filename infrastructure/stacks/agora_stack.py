@@ -468,7 +468,7 @@ class AgoraStack(cdk.Stack):
                 _r.add_to_policy(iam.PolicyStatement(actions=_a, resources=_res))
             _per_agent_roles[_agent_name] = _r
 
-        # Diagnosis: CloudWatch + DynamoDB 直接読み取り
+        # Diagnosis: CloudWatch 読み取り (過去チケット参照は Gateway 経由 ticket-service に委譲)
         _per_agent_roles["diagnosis"].add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -479,15 +479,6 @@ class AgoraStack(cdk.Stack):
                     "cloudwatch:ListMetrics",
                 ],
                 resources=["*"],
-            )
-        )
-        _per_agent_roles["diagnosis"].add_to_policy(
-            iam.PolicyStatement(
-                actions=["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
-                resources=[
-                    self.tickets_table.table_arn,
-                    self.tickets_table.table_arn + "/index/*",
-                ],
             )
         )
 

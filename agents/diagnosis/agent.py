@@ -11,7 +11,6 @@ from strands import Agent
 from strands.models import BedrockModel, CacheConfig
 from strands.tools.mcp import MCPClient
 from strands.vended_plugins.skills.agent_skills import AgentSkills
-from tools import search_past_tickets
 
 
 class _Settings(BaseSettings):
@@ -65,7 +64,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
             cache_config=CacheConfig(strategy="auto"),
         ),
         system_prompt=_SYSTEM_PROMPT,
-        tools=[mcp, search_past_tickets],
+        tools=[mcp],
         plugins=plugins,  # type: ignore[arg-type]
     )
     result = agent.structured_output(DiagnosisResult, message)
