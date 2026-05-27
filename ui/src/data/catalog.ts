@@ -14,6 +14,8 @@ export type AgentDef = {
   /** AgentCore Runtime protocol */
   protocol: "AG-UI" | "A2A";
   model: string;
+  /** Why this model was chosen for this agent */
+  modelNote: string;
   description: string;
   tools: ToolDef[];
 };
@@ -37,6 +39,7 @@ export const AGENTS: AgentDef[] = [
     name: "Gateway Agent",
     protocol: "AG-UI",
     model: "claude-sonnet-4-6",
+    modelNote: "Sonnet — Guardrails との統合・複数サブエージェントのオーケストレーションに高い推論力が必要",
     description:
       "ユーザー向けオーケストレーター。Chat UI からの横断クエリ受付と、ticket-dispatcher からの自動診断依頼をどちらも処理する。Bedrock Guardrails で禁止操作をブロック。",
     tools: [
@@ -62,8 +65,9 @@ export const AGENTS: AgentDef[] = [
     name: "Triage Agent",
     protocol: "A2A",
     model: "claude-haiku-4-5",
+    modelNote: "Haiku — ツールなし・構造化出力のみの分類タスクは高速・低コストな Haiku で十分",
     description:
-      "インシデントを受け取り severity / category / 検索キーワードを分類して JSON で返す。高速な Haiku モデルを使用。",
+      "インシデントを受け取り severity / category / 検索キーワードを分類して JSON で返す。ツール呼び出しなしで構造化出力を返す高速分類エージェント。",
     tools: [],
   },
   {
@@ -71,6 +75,7 @@ export const AGENTS: AgentDef[] = [
     name: "Diagnosis Agent",
     protocol: "A2A",
     model: "claude-sonnet-4-6",
+    modelNote: "Sonnet — 複数 MCP を並列呼び出しして証拠を統合する深い推論が必要",
     description:
       "CloudWatch アラーム確認・コミュニティ知識検索・過去チケット照合を行い、根本原因と推奨アクションを JSON で返す。",
     tools: [
@@ -96,6 +101,7 @@ export const AGENTS: AgentDef[] = [
     name: "Resolution Agent",
     protocol: "A2A",
     model: "claude-sonnet-4-6",
+    modelNote: "Sonnet — 具体的な手順・lesson_learned を structured_output で確実に埋めるには高い指示追従性が必要",
     description:
       "診断結果を元に具体的な解決手順を生成し、AgentCore Gateway 経由で Ticket Service に記録する。lesson_learned も書き込む。",
     tools: [

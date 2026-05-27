@@ -66,7 +66,6 @@
       },
       "get": {
         "summary": "List Tickets",
-        "description": "List incident tickets, optionally filtered by status or category. Use status=resolved to retrieve past resolved incidents for diagnosis reference.",
         "operationId": "list_tickets_tickets_get",
         "parameters": [
           {
@@ -227,6 +226,28 @@
           }
         }
       }
+    },
+    "/prompts": {
+      "get": {
+        "summary": "Get Prompts",
+        "operationId": "get_prompts_prompts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Get Prompts Prompts Get"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -243,6 +264,40 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HistoryEntry": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "status",
+          "actor"
+        ],
+        "title": "HistoryEntry"
       },
       "Ticket": {
         "properties": {
@@ -281,6 +336,17 @@
             ],
             "title": "Resolution"
           },
+          "lesson_learned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Learned"
+          },
           "created_at": {
             "type": "string",
             "title": "Created At"
@@ -299,6 +365,14 @@
               }
             ],
             "title": "Resolved At"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntry"
+            },
+            "type": "array",
+            "title": "History",
+            "default": []
           }
         },
         "type": "object",
@@ -371,6 +445,9 @@
           "resolution": {
             "type": "string"
           },
+          "lesson_learned": {
+            "type": "string"
+          },
           "category": {
             "type": "string",
             "enum": [
@@ -382,6 +459,12 @@
               "security",
               "other"
             ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
           }
         },
         "type": "object",

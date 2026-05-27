@@ -77,15 +77,12 @@ cdk-deploy: qemu-setup
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk deploy --all --require-approval never
 
 gen-specs:
-	uv run python - << 'EOF'
-	import sys, json
-	sys.path.insert(0, 'services/ticket-service')
-	from app.main import app as t; json.dump(t.openapi(), open('infrastructure/specs/ticket-service.json','w'), indent=2)
-	sys.modules.pop('app.main', None); sys.modules.pop('app.settings', None); sys.modules.pop('app.models', None); sys.modules.pop('app.repository', None); sys.modules.pop('app', None)
-	sys.path.pop(0); sys.path.insert(0, 'services/asset-service')
-	from app.main import app as a; json.dump(a.openapi(), open('infrastructure/specs/asset-service.json','w'), indent=2)
-	print("Specs generated in infrastructure/specs/")
-	EOF
+	TABLE_NAME=dummy uv run python -c "\
+	import sys, json; \
+	sys.path.insert(0, 'services/ticket-service'); \
+	from app.main import app as t; \
+	json.dump(t.openapi(), open('infrastructure/specs/ticket-service.json','w'), indent=2); \
+	print('Specs generated in infrastructure/specs/')"
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
 

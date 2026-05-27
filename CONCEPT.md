@@ -61,6 +61,7 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
   Gateway Agent (AG-UI protocol / HTTP POST)
     ↓ A2A
   Triage Agent    : severity=high、category=api-error と分類
+                    (Claude Haiku — ツールなし、分類特化で高速応答)
     ↓ A2A
   Diagnosis Agent : Registry で capability="community-knowledge" を持つ
                     MCP群を発見し並列検索
@@ -68,13 +69,25 @@ ITインシデント発生時、エンジニアはCloudWatchのアラームに�
                     → GitHub Issues  : 類似バグレポートを照合
                     → AWS Docs       : Lambda/FIS ドキュメントを参照
                     → Ticket Service : 過去の類似インシデントを確認
+                    (Claude Sonnet — MCP × structured_output で根拠ある診断)
     ↓ A2A
   Resolution Agent: 状況に合わせた解決提案を生成
-                    → Ticket を更新 (status: diagnosed, resolution: "...")
+                    → Ticket を更新 (status: resolved, lesson_learned: "...")
+                    (Claude Sonnet — structured_output で全フィールドを確実に埋める)
 
 [React UI]
   Tickets タブ: 自動起票されたチケットと診断結果をリアルタイム確認
   Chat タブ   : エージェントの応答を確認・アドホック質問
+
+[Observability — AgentCore Observability (OTEL)]
+  CloudWatch → Application Signals → Transaction Search で確認:
+  → Bridge Lambda → ticket-dispatcher → Gateway Agent → Triage → Diagnosis → Resolution
+    の全処理チェーンが単一トレースとして可視化される
+  → エージェントごとのレイテンシ・ツール呼び出し回数が計測される
+  確認手順:
+    1. AWS コンソール → CloudWatch → Application Signals → Transaction Search
+    2. Service name: agora-gateway-agent（または agora-diagnosis-agent 等）でフィルタ
+    3. 最新トレースを選択してウォーターフォールビューで全スパンを確認
 ```
 
 ### サブシナリオ：Chat — 2つのデモポイント
@@ -95,10 +108,17 @@ Chat タブは以下の2点に絞ってデモ価値を持たせる。
 
 「FIS 実験を止めてください」「Lambda を再起動してください」のような操作指示を入力すると Bedrock Guardrails の Denied Topics がブロックし、拒否メッセージを返す。安全ポリシーがコードではなくインフラレベルで強制されていることを可視化する。
 
-**扱わない操作（System Promptで明示的に禁止 + Guardrailsでブロック）**
+**Guardrails Denied Topics（インフラレベルでブロック）**
 
-- 実システムへの変更実行（Lambda再起動・設定変更など）
-- FIS実験の操作（障害注入の開始・停止）
+| Topic 名 | ブロック対象 |
+|---|---|
+| `FisExperimentControl` | FIS 実験の起動・停止・変更・削除 |
+| `SystemChangeControl` | Lambda 再起動・設定変更、CloudFormation スタック削除・更新、EC2 停止・終了など |
+
+**扱わない操作（Guardrails でブロック）**
+
+- FIS 実験の操作（障害注入の開始・停止）
+- 実システムへの変更実行（Lambda 再起動・設定変更・CloudFormation 操作など）
 
 ### V3: 見える（スコープ外）
 
@@ -205,7 +225,7 @@ DynamoDB Streams: Ticket が resolved に更新されたことを検知
 | Gateway | 内部サービスをMCPツール化 | 既存REST APIを変更せずエージェントから利用可能にする |
 | Registry | capabilityベースの動的発見 | エージェントがサービスのエンドポイントをハードコードしない |
 | Memory | (スコープ外) | デモシナリオに対してコスト対効果が低いため除外 |
-| Policy | (スコープ外) | Cedar Policy Engine を LOG_ONLY モードで設定したが可視効果がないため除外 |
+| Policy | (意図的除外) | Cedar Policy Engine を LOG_ONLY モードで実装・動作確認済みだが、LOG_ONLY では実行時にツール呼び出しをブロックしないため観客への可視効果がなく除外。制限をデモで見せたい場合は Bedrock Guardrails（Denied Topics）を使う。 |
 | Evaluations | (スコープ外) | ADOT→X-Ray転送のサイレント失敗により動作不可のため除外 |
 | Observability (V3) | OTELによるエンドツーエンドトレーシング | Bridge Lambda → エージェント間の処理フローをCloudWatchで可視化 |
 

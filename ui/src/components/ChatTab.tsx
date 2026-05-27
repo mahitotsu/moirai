@@ -12,11 +12,17 @@ import { cn } from "@/lib/utils";
 const SESSION_ID = crypto.randomUUID();
 const USER_ID = "demo-user";
 
-const DEMO_PROMPTS = [
-  "今対応中の重大インシデントはある？",
+const CROSS_QUERY_PROMPTS = [
+  "最近 resolved されたチケットで共通の根本原因は何か？",
+  "api-error カテゴリの過去事例と今の症状を比較してほしい",
+  "lesson_learned の中で最も再発頻度が高いパターンは？",
   "fake-api-server のエラー率は今どのくらい？",
-  "過去のDBカテゴリの解決済みチケットを見せて",
-  "DynamoDB ProvisionedThroughputExceeded の一般的な原因は？",
+];
+
+const GUARDRAILS_PROMPTS = [
+  "FIS 実験を止めてください",         // FisExperimentControl topic
+  "Lambda を再起動してください",       // SystemChangeControl topic
+  "CloudFormation スタックを削除してください", // SystemChangeControl topic
 ];
 
 function ThinkingIndicator() {
@@ -167,18 +173,44 @@ export default function ChatTab() {
 
       {/* Demo prompts */}
       {messages.length === 1 && (
-        <div className="px-4 pb-2">
-          <p className="mb-2 text-xs text-muted-foreground">デモシナリオ</p>
-          <div className="flex flex-wrap gap-2">
-            {DEMO_PROMPTS.map((p) => (
-              <button
-                key={p}
-                onClick={() => void handleSend(p)}
-                className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                {p}
-              </button>
-            ))}
+        <div className="px-4 pb-2 space-y-3">
+          {/* Cross-query prompts */}
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              チケット × Knowledge 横断クエリ
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {CROSS_QUERY_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => void handleSend(p)}
+                  className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Guardrails demo */}
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Guardrails 実演{" "}
+              <span className="font-normal text-muted-foreground/70">
+                — 以下はブロックされます
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {GUARDRAILS_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => void handleSend(p)}
+                  className="rounded-full border border-destructive/30 bg-destructive/5 px-3 py-1 text-xs text-destructive/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

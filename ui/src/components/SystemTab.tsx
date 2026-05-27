@@ -57,7 +57,7 @@ function ToolList({ tools }: { tools: ToolDef[] }) {
 // ---------------------------------------------------------------------------
 // Agent card
 // ---------------------------------------------------------------------------
-function AgentCard({ agent, livePrompt, fetchError }: { agent: AgentDef; livePrompt: string | null; fetchError: boolean }) {
+function AgentCard({ agent, livePrompt, fetchError }: { agent: AgentDef; livePrompt: string | null; fetchError: boolean; }) {
   const [promptOpen, setPromptOpen] = useState(false);
 
   const protocolVariant =
@@ -71,7 +71,11 @@ function AgentCard({ agent, livePrompt, fetchError }: { agent: AgentDef; livePro
         <div className="flex flex-wrap items-center gap-1.5">
           <CardTitle className="text-sm font-semibold">{agent.name}</CardTitle>
           <Badge variant={protocolVariant}>{agent.protocol}</Badge>
-          <Badge variant="outline" className="font-mono text-xs">
+          <Badge
+            variant="outline"
+            className="font-mono text-xs"
+            title={agent.modelNote}
+          >
             {agent.model}
           </Badge>
           {livePrompt !== null && (
@@ -82,6 +86,9 @@ function AgentCard({ agent, livePrompt, fetchError }: { agent: AgentDef; livePro
         </div>
         <CardDescription className="text-xs leading-relaxed mt-1">
           {agent.description}
+        </CardDescription>
+        <CardDescription className="text-xs mt-1 text-muted-foreground/60 italic">
+          モデル選択理由: {agent.modelNote}
         </CardDescription>
       </CardHeader>
 

@@ -509,10 +509,25 @@ class AgoraStack(cdk.Stack):
                         ),
                         examples=[
                             "FIS 実験を開始してください",
-                            "Start the FIS experiment",
-                            "Stop the fault injection",
                             "障害注入を止めて",
                             "Run the chaos experiment",
+                        ],
+                        type="DENY",
+                        input_enabled=True,
+                        output_enabled=False,
+                    ),
+                    bedrock.CfnGuardrail.TopicConfigProperty(
+                        name="SystemChangeControl",
+                        definition=(
+                            "AWS リソースの設定変更・再起動・削除・スケーリングなど、"
+                            "実システムに変更を加える操作。Lambda 関数の再起動や設定変更、"
+                            "CloudFormation スタックの削除・更新、EC2 インスタンスの停止・終了、"
+                            "IAM ポリシーの変更、S3 バケットの削除などを含む。"
+                        ),
+                        examples=[
+                            "Lambda を再起動してください",
+                            "CloudFormation スタックを削除してください",
+                            "EC2 インスタンスを停止してください",
                         ],
                         type="DENY",
                         input_enabled=True,
