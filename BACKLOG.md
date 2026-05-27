@@ -4,8 +4,8 @@
 
 ## 現在のフォーカス
 
-**フェーズ**: V4 完了・AgentCore 統合整備中  
-**次のタスク**: E2Eデモ再確認 → 最終リリース準備
+**フェーズ**: V4 完了・デモ品質整備完了  
+**次のタスク**: E2Eデモ実機確認 → 最終リリース準備
 
 ---
 
@@ -84,6 +84,15 @@
 - [x] 29. Ticket 履歴追跡実装 (`history: List[HistoryEntry]` を DynamoDB リスト属性として追加。エージェントが open/investigating/resolved 各遷移時に `{timestamp, status, note, actor}` を書き込む)
 - [x] 30. `lesson_learned` フィールド実装 (Resolution Agent が close 時に1文の教訓を書き込む。Knowledge タブはこのフィールドを `resolution` の代わりに主表示に使用)
 - [x] 31. Gateway Agent system_prompt 改訂 (Chat の役割を「チケット×Knowledge 横断クエリ」と「Guardrails 実演」に絞る。横断クエリを得意とする旨を明示し、Analysis Agent 起動などボタン代替可能な指示は受け付けない旨を追記)
+
+## デモ品質整備（最終）
+
+- [x] 32. Guardrails 拡張・OpenAPI spec 修正・UI 改善 (3bc520d 2026-05-27):
+  - Guardrails に SystemChangeControl トピック追加（Lambda 再起動・CFn 削除 etc.）
+  - ticket-service OpenAPI spec に lesson_learned フィールドを反映（make gen-specs 再生成）
+  - ChatTab デモプロンプトを「横断クエリ」「Guardrails 実演」2 セクションに分割
+  - SystemTab にモデル選択理由ツールチップ・表示を追加（catalog.ts modelNote）
+  - CONCEPT.md を最終状態に更新（Observability・Guardrails 2 トピック・モデル選択理由）
 
 ---
 
