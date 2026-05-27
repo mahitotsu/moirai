@@ -93,6 +93,9 @@
   - ChatTab デモプロンプトを「横断クエリ」「Guardrails 実演」2 セクションに分割
   - SystemTab にモデル選択理由ツールチップ・表示を追加（catalog.ts modelNote）
   - CONCEPT.md を最終状態に更新（Observability・Guardrails 2 トピック・モデル選択理由）
+- [x] 33. PITCH.md 新規作成・CONCEPT.md 削除 (e8b9058 2026-05-28):
+  - 6ペルソナ分析 → 訴求ポイント仕分け → デモシナリオ → 技術選択の根拠 → サービス解説を一冊化
+  - CONCEPT.md を削除し PITCH.md に統合（デモ設計の意思決定プロセスを記録）
 
 ---
 
