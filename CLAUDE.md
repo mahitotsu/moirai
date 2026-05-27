@@ -1,6 +1,6 @@
 # Agora — 開発ガイド
 
-設計・スコープ・デモシナリオの詳細は [CONCEPT.md](CONCEPT.md) を参照。  
+設計・スコープ・デモシナリオの詳細は [PITCH.md](PITCH.md) を参照。  
 現在の進捗・次のタスクは [BACKLOG.md](BACKLOG.md) を参照。
 
 ## セッション開始時のルール
