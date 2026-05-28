@@ -679,6 +679,8 @@ class AgoraStack(cdk.Stack):
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
                 "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
                 "SYSTEM_PROMPT_ARN": self.gateway_prompt_version.attr_arn,
+                "AGENT_OBSERVABILITY_ENABLED": "true",
+                "OTEL_SERVICE_NAME": "agora-gateway",
             },
             tags={"capability": "gateway", "project": "agora"},
         )
@@ -1144,6 +1146,8 @@ class AgoraStack(cdk.Stack):
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
             env_vars["SYSTEM_PROMPT_ARN"] = _a2a_prompt_arns[agent["name"]]
+            env_vars["AGENT_OBSERVABILITY_ENABLED"] = "true"
+            env_vars["OTEL_SERVICE_NAME"] = f"agora-{agent['name']}"
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,

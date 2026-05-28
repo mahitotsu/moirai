@@ -254,6 +254,13 @@ AWS リソースのメトリクス・ログを収集・監視するサービス�
 
 **選定理由**: AWS ネイティブな監視であり、EventBridge との連携がコード不要で実現できる。
 
+#### AWS X-Ray
+分散トレーシングサービス。OTEL 計装されたサービスのスパンを受け取り、サービスマップとウォーターフォールビューで可視化する。
+
+**デモでの役割**: `AGENT_OBSERVABILITY_ENABLED=true` により `aws-opentelemetry-distro` が各エージェントコンテナで自動起動し、`X-Amzn-Trace-Id` ヘッダーで trace context を伝播させながらスパンを X-Ray に送信する。CloudWatch Application Signals の Transaction Search で Gateway → Triage → Diagnosis → Resolution の全処理チェーンと、各エージェントの Bedrock API 呼び出し・DynamoDB アクセス・MCP ツールコールが単一トレースとして表示される。
+
+**選定理由**: botocore の auto-instrumentation が全 AWS SDK コール（Bedrock、DynamoDB、AgentCore invoke）を自動でスパン化するため、エージェントコードの変更不要。追加したのは CDK の環境変数 2 つのみ（`AGENT_OBSERVABILITY_ENABLED=true`、`OTEL_SERVICE_NAME`）。
+
 #### Amazon EventBridge
 AWS サービス間のイベントルーティングサービス。「A が X になったら B を実行」をコードなしで定義できる。
 
@@ -352,6 +359,13 @@ DynamoDB のデータ変更をリアルタイムで Lambda に通知する機能
 | SystemChangeControl | Lambda 再起動・設定変更、CloudFormation 操作、EC2 停止・終了など |
 
 **選定理由**: コードで判定していないため、プロンプトの書き方に依存しない一貫したポリシー適用ができる。コードに判定ロジックを書く場合、プロンプトの書き方次第で迂回される可能性がある。
+
+#### Amazon Bedrock Model Invocation Logging
+Bedrock に送ったプロンプト全文・レスポンス全文・モデル ID・レイテンシを S3 または CloudWatch Logs に記録するサービス。アカウントレベルの設定で有効化する。
+
+**デモでの役割**: AgentCore Observability（OTEL トレース）がエージェント間の処理フローを記録するのに対し、Model Invocation Logging は各エージェントが Claude に送った具体的なプロンプトと返答を証跡として保存する。デモ後に「Gateway はどんな指示を Triage に渡したか」「Diagnosis の推論全文」を事後確認できる。
+
+**選定理由**: コードへの追加は不要（Bedrock コンソールまたは CDK の `PutModelInvocationLoggingConfiguration` で有効化）。LLM レイヤーの監査・デバッグ・コンプライアンス証跡として、OTEL トレースとは異なる補完的な可視性を提供する。
 
 ---
 
