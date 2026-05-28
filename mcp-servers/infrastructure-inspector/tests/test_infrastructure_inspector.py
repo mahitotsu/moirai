@@ -10,10 +10,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 _mock_lambda = MagicMock()
 _mock_fis = MagicMock()
 _mock_cfn = MagicMock()
+_mock_logs = MagicMock()
 
 
 def _make_boto3(service: str, **_: object) -> MagicMock:
-    return {"lambda": _mock_lambda, "fis": _mock_fis, "cloudformation": _mock_cfn}[service]
+    return {
+        "lambda": _mock_lambda,
+        "fis": _mock_fis,
+        "cloudformation": _mock_cfn,
+        "logs": _mock_logs,
+    }[service]
 
 
 with patch("boto3.client", side_effect=_make_boto3):
@@ -24,6 +30,7 @@ server = _infra_server
 server._clients["lambda"] = _mock_lambda
 server._clients["fis"] = _mock_fis
 server._clients["cfn"] = _mock_cfn
+server._clients["logs"] = _mock_logs
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +41,7 @@ def test_inspect_lambda_returns_config() -> None:
     _mock_lambda.get_function.return_value = {
         "Configuration": {
             "FunctionName": "agora-fake-api-server",
+            "FunctionArn": "arn:aws:lambda:us-east-1:123:function:agora-fake-api-server",
             "Description": "Fake API server for demo",
             "Runtime": "python3.12",
             "Handler": "lambda_function.handler",
@@ -44,6 +52,7 @@ def test_inspect_lambda_returns_config() -> None:
         }
     }
     _mock_lambda.list_event_source_mappings.return_value = {"EventSourceMappings": []}
+    _mock_lambda.list_tags.return_value = {"Tags": {}}
 
     result = server.inspect_lambda("agora-fake-api-server")
 
@@ -53,10 +62,36 @@ def test_inspect_lambda_returns_config() -> None:
     assert "AWS_REGION" in result
 
 
+def test_inspect_lambda_returns_cfn_stack_tag() -> None:
+    _mock_lambda.get_function.return_value = {
+        "Configuration": {
+            "FunctionName": "agora-fake-api-server",
+            "FunctionArn": "arn:aws:lambda:us-east-1:123:function:agora-fake-api-server",
+            "Runtime": "python3.12",
+            "Timeout": 30,
+            "MemorySize": 256,
+        }
+    }
+    _mock_lambda.list_event_source_mappings.return_value = {"EventSourceMappings": []}
+    _mock_lambda.list_tags.return_value = {
+        "Tags": {
+            "aws:cloudformation:stack-name": "FaultInjectionStack",
+            "aws:cloudformation:logical-id": "FakeApiServerFn",
+            "agora:role": "monitored-target",
+        }
+    }
+
+    result = server.inspect_lambda("agora-fake-api-server")
+
+    assert "FaultInjectionStack" in result
+    assert "monitored-target" in result
+
+
 def test_inspect_lambda_shows_event_source_mappings() -> None:
     _mock_lambda.get_function.return_value = {
         "Configuration": {
             "FunctionName": "fn",
+            "FunctionArn": "arn:aws:lambda:us-east-1:123:function:fn",
             "Runtime": "python3.12",
             "Timeout": 10,
             "MemorySize": 128,
@@ -67,6 +102,7 @@ def test_inspect_lambda_shows_event_source_mappings() -> None:
             {"EventSourceArn": "arn:aws:sqs:us-east-1:123:queue", "State": "Enabled"}
         ]
     }
+    _mock_lambda.list_tags.return_value = {"Tags": {}}
 
     result = server.inspect_lambda("fn")
     assert "sqs" in result
@@ -161,3 +197,48 @@ def test_describe_cfn_stack_returns_error_message_on_exception() -> None:
     result = server.describe_cfn_stack("NonExistentStack")
     assert "Failed" in result
     _mock_cfn.describe_stacks.side_effect = None
+
+
+# ---------------------------------------------------------------------------
+# get_lambda_recent_errors
+# ---------------------------------------------------------------------------
+
+def test_get_lambda_recent_errors_returns_log_lines() -> None:
+    _mock_logs.filter_log_events.return_value = {
+        "events": [
+            {
+                "timestamp": 1735689600000,  # 2025-01-01T00:00:00Z
+                "message": "[ERROR] ClientError: An error occurred (ThrottlingException) "
+                           "when calling the DescribeInstances operation: Rate exceeded\n",
+            }
+        ]
+    }
+
+    result = server.get_lambda_recent_errors("agora-fake-api-server")
+
+    assert "ThrottlingException" in result
+    assert "DescribeInstances" in result
+    assert "agora-fake-api-server" in result
+
+    call_kwargs = _mock_logs.filter_log_events.call_args[1]
+    assert call_kwargs["logGroupName"] == "/aws/lambda/agora-fake-api-server"
+    assert "ERROR" in call_kwargs["filterPattern"] or "Exception" in call_kwargs["filterPattern"]
+
+
+def test_get_lambda_recent_errors_returns_no_errors_message() -> None:
+    _mock_logs.filter_log_events.return_value = {"events": []}
+
+    result = server.get_lambda_recent_errors("agora-fake-api-server", minutes=5)
+
+    assert "No ERROR" in result or "No" in result
+    assert "agora-fake-api-server" in result
+
+
+def test_get_lambda_recent_errors_returns_error_message_on_exception() -> None:
+    _mock_logs.filter_log_events.side_effect = Exception("ResourceNotFoundException")
+
+    result = server.get_lambda_recent_errors("missing-fn")
+
+    assert "Failed" in result
+    assert "missing-fn" in result
+    _mock_logs.filter_log_events.side_effect = None

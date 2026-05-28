@@ -74,6 +74,10 @@ class FaultInjectionStack(cdk.Stack):
             self,
             "FakeApiServerFn",
             function_name="agora-fake-api-server",
+            description=(
+                "Simulates a backend API health-check by calling EC2 DescribeInstances. "
+                "Scheduled every minute. FIS ThrottlingException injection target."
+            ),
             code=lambda_.Code.from_asset(str(_SERVICES_DIR / "fake-api-server")),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
@@ -81,6 +85,14 @@ class FaultInjectionStack(cdk.Stack):
             memory_size=_MEMORY_MB,
             timeout=_TIMEOUT_STANDARD,
             role=self.fake_api_role,
+        )
+        cdk.Tags.of(self.fake_api_fn).add(
+            "agora:role",
+            "monitored-target",
+        )
+        cdk.Tags.of(self.fake_api_fn).add(
+            "agora:fis-target",
+            "ec2:DescribeInstances ThrottlingException injection",
         )
 
         # EventBridge Scheduler — デフォルト DISABLED。make demo-start で有効化
