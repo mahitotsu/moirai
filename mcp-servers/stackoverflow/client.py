@@ -13,14 +13,15 @@ class StackOverflowClient:
 
     async def search(
         self,
-        query: str,
+        service: str,
+        error_type: str,
         tags: list[str] | None = None,
         num_results: int = 5,
     ) -> list[dict]:
         params: dict = {
             "order": "desc",
             "sort": "relevance",
-            "q": query,
+            "q": f"{service} {error_type}",
             "site": "stackoverflow",
             "pagesize": num_results,
             "filter": "withbody",

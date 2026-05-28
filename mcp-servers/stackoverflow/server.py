@@ -23,22 +23,29 @@ def _get_client() -> StackOverflowClient:
 
 @mcp.tool()
 async def search_stackoverflow(
-    query: str,
+    service: str,
+    error_type: str,
     tags: list[str] | None = None,
     num_results: int = 5,
 ) -> str:
-    """Search Stack Overflow for questions and accepted answers related to a technical problem.
+    """Search Stack Overflow for questions and accepted answers related to a technical failure.
 
     Args:
-        query: The search query describing the technical problem.
-        tags: Optional list of technology tags to filter by (e.g. ["python", "postgresql"]).
+        service: The service or technology where the failure occurred
+            (e.g. "AWS Lambda", "PostgreSQL", "Python boto3").
+        error_type: The type of failure or error observed
+            (e.g. "timeout", "connection refused", "memory limit exceeded", "permission denied").
+        tags: Optional SO tags to narrow results (e.g. ["aws-lambda", "python"]).
+            Infer from service when not explicitly known.
         num_results: Number of results to return (default 5, max 10).
 
     Returns:
         Formatted text with top questions, their scores, and accepted answers.
     """
     try:
-        items = await _get_client().search(query, tags=tags, num_results=min(num_results, 10))
+        items = await _get_client().search(
+            service=service, error_type=error_type, tags=tags, num_results=min(num_results, 10)
+        )
     except Exception as e:
         raise ValueError(f"Stack Overflow search failed: {e}") from e
 

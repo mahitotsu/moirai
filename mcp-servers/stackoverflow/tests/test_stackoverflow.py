@@ -37,7 +37,7 @@ async def test_search_returns_results(
             "has_more": False,
         },
     )
-    results = await client.search("postgresql timeout")
+    results = await client.search("PostgreSQL", "timeout")
     assert len(results) == 1
     assert results[0]["title"] == "PostgreSQL connection timeout"
     assert results[0]["score"] == 42
@@ -48,7 +48,7 @@ async def test_search_with_tags(
     httpx_mock: pytest_httpx.HTTPXMock, client: StackOverflowClient
 ):
     httpx_mock.add_response(json={"items": [], "has_more": False})
-    results = await client.search("timeout", tags=["postgresql"])
+    results = await client.search("PostgreSQL", "timeout", tags=["postgresql"])
     assert results == []
 
 
@@ -58,4 +58,4 @@ async def test_search_http_error(
 ):
     httpx_mock.add_response(status_code=500)
     with pytest.raises(httpx.HTTPStatusError):
-        await client.search("some query")
+        await client.search("SomeService", "some error")

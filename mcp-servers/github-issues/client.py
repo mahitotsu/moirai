@@ -18,14 +18,20 @@ class GitHubIssuesClient:
 
     async def search_issues(
         self,
-        query: str,
+        service: str,
+        error_type: str,
         repos: list[str] | None = None,
+        state: str = "all",
+        labels: list[str] | None = None,
         num_results: int = 5,
     ) -> list[dict]:
-        q = query
+        q = f"{service} {error_type} is:issue"
+        if state != "all":
+            q += f" is:{state}"
         if repos:
-            repo_filter = " ".join(f"repo:{r}" for r in repos)
-            q = f"{query} {repo_filter}"
+            q += " " + " ".join(f"repo:{r}" for r in repos)
+        if labels:
+            q += " " + " ".join(f'label:"{lbl}"' for lbl in labels)
 
         params: dict[str, str | int] = {
             "q": q,

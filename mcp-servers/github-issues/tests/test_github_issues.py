@@ -38,7 +38,7 @@ async def test_search_issues_returns_results(
             ],
         },
     )
-    results = await client.search_issues("connection pool exhausted")
+    results = await client.search_issues("PostgreSQL", "connection pool exhausted")
     assert len(results) == 1
     assert results[0]["title"] == "Connection pool exhausted"
     assert results[0]["state"] == "open"
@@ -51,7 +51,9 @@ async def test_search_issues_with_repos(
     httpx_mock.add_response(
         json={"total_count": 0, "incomplete_results": False, "items": []}
     )
-    results = await client.search_issues("timeout", repos=["psf/requests"])
+    results = await client.search_issues(
+        "Python requests", "timeout", repos=["psf/requests"]
+    )
     assert results == []
 
 
@@ -61,4 +63,4 @@ async def test_search_issues_http_error(
 ):
     httpx_mock.add_response(status_code=422)
     with pytest.raises(httpx.HTTPStatusError):
-        await client.search_issues("some query")
+        await client.search_issues("SomeService", "some error")

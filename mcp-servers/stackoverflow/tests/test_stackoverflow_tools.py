@@ -33,7 +33,7 @@ async def test_search_returns_formatted_markdown(mock_so_client):
             "body": "<p>Increase max_connections</p>",
         }
     ]
-    result = await search_stackoverflow("connection pool")
+    result = await search_stackoverflow("PostgreSQL", "connection pool exhausted")
 
     assert "Connection pool exhausted" in result
     assert "Score: 42" in result
@@ -52,7 +52,7 @@ async def test_search_strips_html_from_body(mock_so_client):
             "body": "<p><strong>Use</strong> <em>pooling</em></p>",
         }
     ]
-    result = await search_stackoverflow("pooling")
+    result = await search_stackoverflow("PostgreSQL", "connection pooling")
 
     assert "<p>" not in result
     assert "<strong>" not in result
@@ -61,7 +61,7 @@ async def test_search_strips_html_from_body(mock_so_client):
 
 async def test_search_no_results_returns_helpful_message(mock_so_client):
     mock_so_client.search.return_value = []
-    result = await search_stackoverflow("xyzzy no match")
+    result = await search_stackoverflow("UnknownService", "xyzzy no match")
 
     assert "No results found" in result
 
@@ -71,11 +71,11 @@ async def test_search_api_error_raises_user_friendly_value_error(mock_so_client)
     mock_so_client.search.side_effect = Exception("connection reset")
 
     with pytest.raises(ValueError, match="Stack Overflow search failed"):
-        await search_stackoverflow("some query")
+        await search_stackoverflow("SomeService", "some error")
 
 
 async def test_num_results_capped_at_10(mock_so_client):
     mock_so_client.search.return_value = []
-    await search_stackoverflow("query", num_results=99)
+    await search_stackoverflow("SomeService", "some error", num_results=99)
 
     assert mock_so_client.search.call_args.kwargs["num_results"] <= 10
