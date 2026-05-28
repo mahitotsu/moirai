@@ -5,6 +5,8 @@ import sys
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("KNOWLEDGE_TABLE_NAME", "agora-test-knowledge")
+os.environ.setdefault("VECTOR_BUCKET_NAME", "agora-test-vectors")
+os.environ.setdefault("VECTOR_INDEX_NAME", "tickets")
 
 sys.modules.pop("lambda_function", None)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -43,7 +45,10 @@ def _streams_event(
 
 
 def test_modify_resolved_calls_crystallize() -> None:
-    with patch.object(lambda_function, "_crystallize") as mock:
+    with (
+        patch.object(lambda_function, "_crystallize") as mock,
+        patch.object(lambda_function, "_index_vector"),
+    ):
         result = lambda_function.handler(
             _streams_event("MODIFY", new_status="resolved", old_status="investigating"),
             None,
@@ -134,3 +139,70 @@ def test_crystallize_includes_lesson_learned_when_present() -> None:
 
     item = mock_db.put_item.call_args.kwargs["Item"]
     assert item["lesson_learned"]["S"] == "Add indexes before high-traffic launches."
+
+
+def test_index_vector_calls_put_vectors() -> None:
+    """_index_vector が Bedrock で embed して S3 Vectors に put_vectors を呼ぶことを確認する。"""
+    new_image = {
+        "ticket_id": {"S": "t-200"},
+        "title": {"S": "High CPU"},
+        "category": {"S": "performance"},
+        "severity": {"S": "high"},
+        "resolution": {"S": "Scaled out the fleet."},
+    }
+    fake_embedding = [0.1] * 1024
+    mock_br = MagicMock()
+    embed_body = __import__("json").dumps({"embedding": fake_embedding}).encode()
+    mock_br.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: embed_body)
+    }
+    mock_sv = MagicMock()
+
+    with (
+        patch.object(lambda_function, "_bedrock_runtime", mock_br),
+        patch.object(lambda_function, "_s3vectors", mock_sv),
+    ):
+        lambda_function._index_vector(new_image)
+
+    mock_br.invoke_model.assert_called_once()
+    mock_sv.put_vectors.assert_called_once()
+    call_kwargs = mock_sv.put_vectors.call_args.kwargs
+    assert call_kwargs["vectorBucketName"] == "agora-test-vectors"
+    assert call_kwargs["indexName"] == "tickets"
+    vectors = call_kwargs["vectors"]
+    assert len(vectors) == 1
+    assert vectors[0]["key"] == "t-200"
+    assert vectors[0]["data"]["float32"] == fake_embedding
+    assert vectors[0]["metadata"]["ticket_id"] == "t-200"
+    assert vectors[0]["metadata"]["category"] == "performance"
+
+
+def test_handler_calls_index_vector_on_resolve() -> None:
+    """handler が _crystallize と _index_vector の両方を呼ぶことを確認する。"""
+    with (
+        patch.object(lambda_function, "_crystallize") as mock_c,
+        patch.object(lambda_function, "_index_vector") as mock_iv,
+    ):
+        result = lambda_function.handler(
+            _streams_event("MODIFY", new_status="resolved", old_status="investigating"),
+            None,
+        )
+    mock_c.assert_called_once()
+    mock_iv.assert_called_once()
+    assert result == {"batchItemFailures": []}
+
+
+def test_index_vector_failure_reported_as_batch_item_failure() -> None:
+    """_index_vector の ClientError が batchItemFailures に含まれることを確認する。"""
+    from botocore.exceptions import ClientError
+
+    err = ClientError({"Error": {"Code": "InternalError", "Message": "x"}}, "PutVectors")
+    with (
+        patch.object(lambda_function, "_crystallize"),
+        patch.object(lambda_function, "_index_vector", side_effect=err),
+    ):
+        result = lambda_function.handler(
+            _streams_event("MODIFY", new_status="resolved", old_status="open"),
+            None,
+        )
+    assert result["batchItemFailures"] == [{"itemIdentifier": "1234567890"}]

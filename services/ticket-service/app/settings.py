@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     triage_prompt_arn: str = ""
     diagnosis_prompt_arn: str = ""
     resolution_prompt_arn: str = ""
+    vector_bucket_name: str = ""
+    vector_index_name: str = ""
 
     @model_validator(mode="after")
     def resolve_api_key_from_secret(self) -> Settings:

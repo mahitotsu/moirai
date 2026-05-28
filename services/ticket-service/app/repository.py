@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -7,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from mypy_boto3_dynamodb import DynamoDBClient
 
-from app.models import HistoryEntry, Ticket, TicketCreate, TicketUpdate
+from app.models import HistoryEntry, SimilarTicket, Ticket, TicketCreate, TicketUpdate
+
+_EMBED_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
 def _now() -> str:
@@ -57,9 +60,21 @@ def _to_ticket(item: dict[str, Any]) -> Ticket:
 
 
 class TicketRepository:
-    def __init__(self, client: DynamoDBClient, table_name: str) -> None:
+    def __init__(
+        self,
+        client: DynamoDBClient,
+        table_name: str,
+        s3vectors_client: Any | None = None,
+        bedrock_runtime_client: Any | None = None,
+        vector_bucket_name: str = "",
+        vector_index_name: str = "",
+    ) -> None:
         self._client = client
         self._table = table_name
+        self._s3vectors = s3vectors_client
+        self._bedrock_runtime = bedrock_runtime_client
+        self._vector_bucket = vector_bucket_name
+        self._vector_index = vector_index_name
 
     def create(self, data: TicketCreate) -> Ticket:
         now = _now()
@@ -170,3 +185,33 @@ class TicketRepository:
     def scan(self, limit: int = 100) -> list[Ticket]:
         resp = self._client.scan(TableName=self._table, Limit=limit)
         return [_to_ticket(item) for item in resp.get("Items", [])]
+
+    def search_similar(self, query: str, top_k: int = 5) -> list[SimilarTicket]:
+        if not self._s3vectors or not self._bedrock_runtime or not self._vector_bucket:
+            return []
+        embed_resp = self._bedrock_runtime.invoke_model(
+            modelId=_EMBED_MODEL_ID,
+            body=json.dumps({"inputText": query}),
+            contentType="application/json",
+            accept="application/json",
+        )
+        embedding: list[float] = json.loads(embed_resp["body"].read())["embedding"]
+        result = self._s3vectors.query_vectors(
+            vectorBucketName=self._vector_bucket,
+            indexName=self._vector_index,
+            topK=top_k,
+            queryVector={"float32": embedding},
+            returnMetadata=True,
+            returnDistance=True,
+        )
+        tickets: list[SimilarTicket] = []
+        for v in result.get("vectors", []):
+            meta = v.get("metadata", {})
+            tickets.append(SimilarTicket(
+                ticket_id=meta.get("ticket_id", v["key"]),
+                title=meta.get("title", ""),
+                category=meta.get("category", ""),
+                severity=meta.get("severity", ""),
+                distance=v.get("distance", 0.0),
+            ))
+        return tickets

@@ -17,6 +17,7 @@ import aws_cdk.aws_lambda as lambda_
 import aws_cdk.aws_lambda_event_sources as event_sources
 import aws_cdk.aws_logs as logs
 import aws_cdk.aws_s3 as s3
+import aws_cdk.aws_s3vectors as s3v
 import aws_cdk.aws_secretsmanager as secretsmanager
 import aws_cdk.aws_sqs as sqs
 import aws_cdk.aws_ssm as ssm
@@ -88,6 +89,12 @@ _API_KEY_LENGTH = 32
 _TICKETS_STATUS_INDEX = "status-created_at-index"
 _TICKETS_CATEGORY_INDEX = "category-created_at-index"
 _KNOWLEDGE_CATEGORY_INDEX = "category-crystallized_at-index"
+
+# ── S3 Vectors ─────────────────────────────────────────────────────────────
+_VECTOR_BUCKET_NAME = "agora-incident-vectors"
+_VECTOR_INDEX_NAME = "tickets"
+_VECTOR_DIMENSIONS = 1024  # Titan Embeddings V2 デフォルト次元数
+_EMBED_MODEL_TITAN = "amazon.titan-embed-text-v2:0"
 
 
 class _Settings(BaseSettings):
@@ -225,6 +232,28 @@ class AgoraStack(cdk.Stack):
         )
 
         # =====================================================================
+        # S3 VECTORS — 類似インシデント検索用ベクターストア
+        # =====================================================================
+        self.vector_bucket = s3v.CfnVectorBucket(
+            self,
+            "IncidentVectorBucket",
+            vector_bucket_name=_VECTOR_BUCKET_NAME,
+        )
+        self.vector_bucket.apply_removal_policy(cdk.RemovalPolicy.DESTROY)
+
+        self.vector_index = s3v.CfnIndex(
+            self,
+            "IncidentVectorIndex",
+            vector_bucket_name=_VECTOR_BUCKET_NAME,
+            index_name=_VECTOR_INDEX_NAME,
+            data_type="float32",
+            dimension=_VECTOR_DIMENSIONS,
+            distance_metric="cosine",
+        )
+        self.vector_index.add_dependency(self.vector_bucket)
+        self.vector_index.apply_removal_policy(cdk.RemovalPolicy.DESTROY)
+
+        # =====================================================================
         # SECRETS — API キー (Gateway → Service 認証)
         # =====================================================================
         self.services_api_key_secret = secretsmanager.Secret(
@@ -279,6 +308,20 @@ class AgoraStack(cdk.Stack):
             iam.PolicyStatement(
                 actions=["bedrock:GetPrompt"],
                 resources=[f"arn:aws:bedrock:{self.region}:{self.account}:prompt/*"],
+            )
+        )
+        self.ticket_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3vectors:QueryVectors"],
+                resources=[self.vector_bucket.attr_vector_bucket_arn + "/*"],
+            )
+        )
+        self.ticket_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/{_EMBED_MODEL_TITAN}"
+                ],
             )
         )
 
@@ -727,6 +770,8 @@ class AgoraStack(cdk.Stack):
                 "TRIAGE_PROMPT_ARN": self.triage_prompt_version.attr_arn,
                 "DIAGNOSIS_PROMPT_ARN": self.diagnosis_prompt_version.attr_arn,
                 "RESOLUTION_PROMPT_ARN": self.resolution_prompt_version.attr_arn,
+                "VECTOR_BUCKET_NAME": _VECTOR_BUCKET_NAME,
+                "VECTOR_INDEX_NAME": _VECTOR_INDEX_NAME,
             },
         )
 
@@ -869,6 +914,20 @@ class AgoraStack(cdk.Stack):
                 resources=[self.knowledge_table.table_arn],
             )
         )
+        _knowledge_consumer_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3vectors:PutVectors"],
+                resources=[self.vector_bucket.attr_vector_bucket_arn + "/*"],
+            )
+        )
+        _knowledge_consumer_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["bedrock:InvokeModel"],
+                resources=[
+                    f"arn:aws:bedrock:{self.region}::foundation-model/{_EMBED_MODEL_TITAN}"
+                ],
+            )
+        )
 
         _knowledge_consumer_dlq = sqs.Queue(
             self,
@@ -907,6 +966,8 @@ class AgoraStack(cdk.Stack):
             ),
             environment={
                 "KNOWLEDGE_TABLE_NAME": self.knowledge_table.table_name,
+                "VECTOR_BUCKET_NAME": _VECTOR_BUCKET_NAME,
+                "VECTOR_INDEX_NAME": _VECTOR_INDEX_NAME,
             },
         )
         lambda_.EventSourceMapping(

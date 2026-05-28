@@ -6,13 +6,15 @@ import boto3
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from app.models import Ticket, TicketCreate, TicketUpdate
+from app.models import SimilarTicket, Ticket, TicketCreate, TicketUpdate
 from app.repository import TicketRepository
 from app.settings import Settings
 
 settings = Settings()  # type: ignore[call-arg]
 _dynamo_client = boto3.client("dynamodb")
 _bedrock_agent_client = boto3.client("bedrock-agent")
+_s3vectors_client = boto3.client("s3vectors") if settings.vector_bucket_name else None
+_bedrock_runtime_client = boto3.client("bedrock-runtime") if settings.vector_bucket_name else None
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Ticket Service")
@@ -28,7 +30,14 @@ async def api_key_middleware(request: Request, call_next):
 
 
 def get_repository() -> TicketRepository:
-    return TicketRepository(_dynamo_client, settings.table_name)
+    return TicketRepository(
+        _dynamo_client,
+        settings.table_name,
+        s3vectors_client=_s3vectors_client,
+        bedrock_runtime_client=_bedrock_runtime_client,
+        vector_bucket_name=settings.vector_bucket_name,
+        vector_index_name=settings.vector_index_name,
+    )
 
 
 RepoDep = Annotated[TicketRepository, Depends(get_repository)]
@@ -56,6 +65,15 @@ def list_tickets(
     if category:
         return repo.list_by_category(category, limit)
     return repo.scan(limit)
+
+
+@app.get("/tickets/search", response_model=list[SimilarTicket])
+def search_tickets(
+    repo: RepoDep,
+    q: str = Query(description="自然言語クエリ（例: 'database connection timeout'）"),
+    top_k: int = Query(default=5, ge=1, le=20),
+) -> list[SimilarTicket]:
+    return repo.search_similar(q, top_k)
 
 
 @app.get("/tickets/{ticket_id}", response_model=Ticket)

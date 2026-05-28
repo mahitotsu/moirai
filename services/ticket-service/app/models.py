@@ -57,3 +57,11 @@ class Ticket(BaseModel):
     updated_at: str
     resolved_at: str | None = None
     history: list[HistoryEntry] = []
+
+
+class SimilarTicket(BaseModel):
+    ticket_id: str
+    title: str
+    category: str
+    severity: str
+    distance: float

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Generator
+from unittest.mock import MagicMock
 
 import pytest
 from app.main import app, get_repository
@@ -248,3 +250,66 @@ def test_duplicate_status_update_does_not_append_history(repo: TicketRepository)
     second = repo.update(ticket.ticket_id, TicketUpdate(status="resolved", resolution="Fixed"))
     assert second is not None
     assert len(second.history) == 2  # must NOT grow to 3
+
+
+# ── search_similar ─────────────────────────────────────────────────────────
+
+def _make_search_repo(dynamodb_client, table_name: str) -> TicketRepository:
+    fake_embedding = [0.1] * 1024
+    mock_br = MagicMock()
+    mock_br.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: json.dumps({"embedding": fake_embedding}).encode())
+    }
+    mock_sv = MagicMock()
+    mock_sv.query_vectors.return_value = {
+        "vectors": [
+            {
+                "key": "t-abc",
+                "distance": 0.12,
+                "metadata": {
+                    "ticket_id": "t-abc",
+                    "title": "API timeout",
+                    "category": "network",
+                    "severity": "high",
+                },
+            }
+        ]
+    }
+    return TicketRepository(
+        dynamodb_client,
+        table_name,
+        s3vectors_client=mock_sv,
+        bedrock_runtime_client=mock_br,
+        vector_bucket_name="agora-test-vectors",
+        vector_index_name="tickets",
+    )
+
+
+def test_search_similar_returns_results(repo: TicketRepository) -> None:
+    search_repo = _make_search_repo(repo._client, repo._table)
+    results = search_repo.search_similar("database connection issue", top_k=3)
+    assert len(results) == 1
+    assert results[0].ticket_id == "t-abc"
+    assert results[0].title == "API timeout"
+    assert results[0].category == "network"
+    assert results[0].distance == 0.12
+
+
+def test_search_similar_without_vector_config_returns_empty(repo: TicketRepository) -> None:
+    results = repo.search_similar("anything")
+    assert results == []
+
+
+def test_search_endpoint_returns_similar_tickets(
+    repo: TicketRepository, client: TestClient
+) -> None:
+    search_repo = _make_search_repo(repo._client, repo._table)
+    app.dependency_overrides[get_repository] = lambda: search_repo
+    try:
+        resp = client.get("/tickets/search", params={"q": "slow query"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert data[0]["ticket_id"] == "t-abc"
+    finally:
+        app.dependency_overrides[get_repository] = lambda: repo
