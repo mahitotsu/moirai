@@ -14,13 +14,14 @@ _MONITORING_STACK := FaultInjectionStack
 # make gen-specs                  — OpenAPI spec JSONを再生成
 #
 # デモ制御 (V2):
+# make demo-seed                  — 過去チケット50件を投入 (類似検索・横断クエリ用)
 # make demo-start                 — EventBridge Scheduler 有効化 (トラフィック開始)
 # make demo-inject                — FIS 実験開始 (障害注入)
 # make demo-stop                  — Scheduler 無効化 + 実行中 FIS 実験を強制終了
 #
 # Observability セットアップ (V3, アカウントごとに1回・冪等):
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-start demo-inject demo-stop qemu-setup
+        demo-seed demo-start demo-inject demo-stop qemu-setup
 
 test:
 	@failed=0; \
@@ -85,6 +86,11 @@ gen-specs:
 	print('Specs generated in infrastructure/specs/')"
 
 # ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
+
+demo-seed:
+	@echo "==> Seeding demo data (50 historical tickets) ..."
+	@uv run python scripts/seed_demo_data.py
+	@echo "==> Seed complete. Knowledge table and S3 Vectors will be updated in ~30 seconds via DynamoDB Streams."
 
 demo-start:
 	@echo "==> Enabling EventBridge Scheduler (traffic starts, baseline metrics build up)..."
