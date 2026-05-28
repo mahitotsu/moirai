@@ -155,7 +155,7 @@ make demo-inject  # FIS 実験開始（障害注入・自動パイプライン�
   Gateway Agent (AG-UI / HTTP POST)
     ↓ A2A
   Triage Agent
-    severity=high、category=api-error と分類
+    severity=high、category=network と分類（ThrottlingException → network カテゴリ、スキル定義に基づく）
     モデル: Claude Haiku（ツールなし、分類特化で高速応答）
     ↓ A2A
   Diagnosis Agent
@@ -424,7 +424,7 @@ Lambda 関数の状態・FIS 実験の状況・CloudFormation スタックの状
 
 | エージェント | モデル | 理由 |
 |---|---|---|
-| Triage Agent | Claude Haiku | ツール不使用・分類のみ。高速応答と低コストを優先 |
+| Triage Agent | Claude Haiku | 分類基準は Registry から取得した `incident-severity-classification` skill に委譲。ツール不使用・分類特化で高速応答と低コストを優先 |
 | Diagnosis Agent | Claude Sonnet | MCP 並列検索 + structured_output。精度と推論能力が必要 |
 | Resolution Agent | Claude Sonnet | structured_output で複数フィールドを確実に埋める必要がある |
 | Gateway Agent | Claude Sonnet | 横断クエリ・Guardrails 判断のハブ。バランスを重視 |

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import registry
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -26,8 +26,8 @@ app = BedrockAgentCoreApp()
 
 
 class TriageResult(BaseModel):
-    severity: str
-    category: str
+    severity: Literal["critical", "high", "medium", "low"]
+    category: Literal["database", "network", "memory", "deploy", "performance", "security", "other"]
     summary: str
     affected_components: list[str]
     suggested_search_terms: list[str]

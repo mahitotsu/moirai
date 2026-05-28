@@ -31,3 +31,43 @@ def test_settings_load_defaults() -> None:
 
 def test_system_prompt_is_non_empty() -> None:
     assert len(agent._SYSTEM_PROMPT) > 0
+
+
+def test_triage_result_accepts_valid_values() -> None:
+    result = agent.TriageResult(
+        severity="high",
+        category="network",
+        summary="ThrottlingException on EC2 API",
+        affected_components=["ec2", "lambda"],
+        suggested_search_terms=["ThrottlingException", "EC2 API"],
+    )
+    assert result.severity == "high"
+    assert result.category == "network"
+
+
+def test_triage_result_rejects_invalid_severity() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        agent.TriageResult(
+            severity="api-error",
+            category="network",
+            summary="test",
+            affected_components=[],
+            suggested_search_terms=[],
+        )
+
+
+def test_triage_result_rejects_invalid_category() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        agent.TriageResult(
+            severity="high",
+            category="api-error",
+            summary="test",
+            affected_components=[],
+            suggested_search_terms=[],
+        )
