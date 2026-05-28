@@ -344,6 +344,15 @@ DynamoDB のデータ変更をリアルタイムで Lambda に通知する機能
 
 **選定理由**: チケット起票と診断依頼、解決と知識蓄積をそれぞれ疎結合にする。Ticket Service のコードを変更せずにエージェントを後付けできる設計を実現するためのキー。
 
+#### Amazon S3 Vectors
+ベクトルデータの格納・類似検索に特化した S3 ネイティブのストレージサービス（2025年プレビュー）。Vector Bucket にインデックス（`incident-index`）を作成し、`put_vectors` / `query_vectors` API で操作する。
+
+**デモでの役割**:
+- チケット解決時に knowledge-consumer Lambda が解決内容を Bedrock Embeddings（`amazon.titan-embed-text-v2:0`）でベクトル化し `put_vectors` で格納
+- Diagnosis Agent が新規障害を受け取った際、`search_similar_incidents` ツール経由で `query_vectors` を呼び出し、過去の類似インシデントと解決策を取得して診断精度を向上させる
+
+**選定理由**: Bedrock Knowledge Base や OpenSearch Serverless を使わずに、S3 だけでベクトル検索を完結させることで「AWS の最新プリミティブを組み合わせる」実装パターンを示す。追加のクラスタ管理なしに類似検索を実現できる点がデモの訴求ポイント。
+
 ---
 
 ### セキュリティ・ガバナンスレイヤー
