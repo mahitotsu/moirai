@@ -1,65 +1,52 @@
 ---
 name: api-error-diagnosis-runbook
-description: Approved runbook for diagnosing AWS API throttling errors and SDK client failures
+description: AWS APIスロットリングエラーおよびSDKクライアント障害の診断に関する承認済みランブック
 ---
 
-# API Error Diagnosis Runbook
+# APIエラー診断ランブック
 
-Apply this runbook when an incident involves AWS API throttling (`ThrottlingException`,
-`RequestLimitExceeded`), SDK `ClientError`, or service quota exhaustion.
+インシデントがAWS APIスロットリング（`ThrottlingException`、`RequestLimitExceeded`）、SDK `ClientError`、またはサービスクォータ枯渇に関係する場合にこのランブックを適用してください。
 
-## Investigation Sequence
+## 調査手順
 
-Follow these steps **in order** — stop and record findings at each step before proceeding.
+**順番通りに**各ステップを実行し、次に進む前に発見事項を記録してください。
 
-### Step 1 — Check for active FIS fault injection
+### ステップ1 — CloudWatchアラームを確認
 
-Call `list_active_fis_experiments` first.
+`get_active_alarms` を呼び出し、ALARMステートにあるアラームを特定する。
+次に、対象のアラームに対して `get_alarm_history` を呼び出し、スロットリングがいつ開始したか、悪化しているか安定しているかを把握する。
 
-- If a FIS experiment is **running**: treat it as the confirmed root cause.
-  Record the experiment template name and the target action (e.g., `aws:ec2:api-unavailable`
-  targeting `ec2:DescribeInstances`). No further root-cause investigation is needed —
-  proceed directly to step 5 for documentation.
-- If no FIS experiment is active: continue to step 2.
+### ステップ2 — 障害が発生しているLambdaを検査
 
-### Step 2 — Check CloudWatch alarms
+インシデントに記載されている関数名（例：`agora-fake-api-server`）で `inspect_lambda` を呼び出す。
 
-Call `get_active_alarms` to identify which alarms are in ALARM state.
-Then call `get_alarm_history` on the specific alarm to understand when throttling started
-and whether it is worsening or stabilizing.
+以下を確認する：
+- **予約済み同時実行数**: 高い同時実行数 × 高い呼び出し頻度はスロットリングを増幅させる。
+- **タイムアウト設定**: 短いタイムアウトと積極的なリトライはリトライストームを引き起こす。
+- **環境変数**: リトライ設定（バックオフ、最大試行回数）を確認する。
 
-### Step 3 — Inspect the failing Lambda
+### ステップ3 — コミュニティナレッジを検索
 
-Call `inspect_lambda` for the function named in the incident (e.g., `agora-fake-api-server`).
+Stack OverflowとGitHub Issuesで特定のエラーメッセージとサービス名を検索する
+（例：`"ThrottlingException ec2 DescribeInstances boto3"`）。
+影響を受けているAPIの現在のサービスクォータとベストプラクティスについてAWSドキュメントを検索する。
 
-Check for:
-- **Reserved concurrency**: High concurrency × high call frequency amplifies throttling.
-- **Timeout setting**: Short timeouts with aggressive retries cause retry storms.
-- **Environment variables**: Look for retry configuration (backoff, max attempts).
+### ステップ4 — 過去のインシデントを確認
 
-### Step 4 — Search community knowledge
+`search_past_tickets` を呼び出して、以前のスロットリングインシデントを探す。
+`lesson_learned` フィールドが含まれる過去チケットが存在する場合、そのパターンが再発している可能性が高い — 診断書にその旨を明示すること。
 
-Search Stack Overflow and GitHub Issues for the specific error message and service name
-(e.g., `"ThrottlingException ec2 DescribeInstances boto3"`).
-Search AWS Documentation for current service quotas and best practices for the affected API.
+## 確信度レベル
 
-### Step 5 — Check past incidents
-
-Call `search_past_tickets` to find previous throttling incidents.
-If a prior ticket exists with a `lesson_learned` field, that pattern likely recurs — note it
-explicitly in your diagnosis.
-
-## Confidence Levels
-
-| Level | When to assign |
+| レベル | 割り当て条件 |
 |---|---|
-| **high** | FIS experiment active AND error pattern matches the injected action |
-| **medium** | No FIS active, but quota metrics show sustained throttling above the service limit |
-| **low** | No clear evidence — recommend investigating retry logic and SDK configuration |
+| **high** | エラーパターンから `list_active_fis_experiments` を確認した結果、実行中のFIS実験とターゲットアクションが一致する |
+| **medium** | FIS未実行だが、クォータメトリクスがサービス制限を超えた持続的なスロットリングを示している |
+| **low** | 明確なエビデンスなし — リトライロジックとSDK設定の調査を推奨 |
 
-## Key Diagnostic Questions
+## 主要な診断上の問い
 
-1. Is the throttling caused by FIS (controlled) or organic traffic growth (uncontrolled)?
-2. What is the observed API call rate vs. the account service quota?
-3. Are retries implemented with exponential backoff and jitter?
-4. Does the Lambda have reserved concurrency that limits parallel execution?
+1. スロットリングはFIS（制御下）によるものか、有機的なトラフィック増加（制御外）によるものか？
+2. 観測されたAPIコールレートはアカウントのサービスクォータに対してどの程度か？
+3. 指数バックオフとジッターを使ったリトライが実装されているか？
+4. Lambdaに並列実行を制限する予約済み同時実行数が設定されているか？

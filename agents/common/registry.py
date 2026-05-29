@@ -1,11 +1,11 @@
 """
-AgentCore Registry discovery utility.
+AgentCore Registry ディスカバリーユーティリティ。
 
-Agents use this module to find the MCP Gateway URL and A2A agent runtime ARNs
-by querying the AgentCore Registry ('agora_registry').
+エージェントはこのモジュールを使用して、AgentCore Registry（'agora_registry'）に
+クエリすることでMCPゲートウェイURLとA2Aエージェントランタイムのarnを取得します。
 
-All lookups are cached at the module level so Registry API calls happen only
-once per container lifetime.
+すべてのルックアップはモジュールレベルでキャッシュされるため、
+Registry APIコールはコンテナのライフタイム中に1回のみ発生します。
 
 Example:
     from registry import get_mcp_gateway_url, get_agent_runtime_arn
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 REGISTRY_NAME = "agora_registry"
 _ACTIVE_STATUSES = {"DRAFT", "APPROVED"}
 
-# Registry record names — must match registry_catalog_handler.py
+# Registryレコード名 — registry_catalog_handler.py と一致している必要がある
 MCP_GATEWAY_RECORD = "agora-mcp-gateway"
 TRIAGE_AGENT_RECORD = "agora-triage-agent"
 DIAGNOSIS_AGENT_RECORD = "agora-diagnosis-agent"
@@ -37,12 +37,12 @@ RESOLUTION_AGENT_RECORD = "agora-resolution-agent"
 
 _control = boto3.client("bedrock-agentcore-control")
 
-# Module-level cache: persists across invocations in the same container.
+# モジュールレベルキャッシュ: 同一コンテナ内の複数呼び出しにわたって保持される
 _cache: dict[str, object] = {}
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# 内部ヘルパー
 # ---------------------------------------------------------------------------
 
 
@@ -96,12 +96,12 @@ def _get_a2a_inline(record: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# 公開 API
 # ---------------------------------------------------------------------------
 
 
 def get_mcp_gateway_url() -> str:
-    """Return the MCP Gateway URL. Fetches from Registry on first call, then cached."""
+    """MCPゲートウェイURLを返す。初回呼び出し時にRegistryから取得し、以降はキャッシュを使用。"""
     cache_key = "mcp_gateway_url"
     if cache_key not in _cache:
         for rec in _list_all_records("MCP"):
@@ -118,7 +118,7 @@ def get_mcp_gateway_url() -> str:
 
 
 def get_agent_runtime_arn(record_name: str) -> str:
-    """Return the runtimeArn for a registered agent. Fetches from Registry on first call."""
+    """登録済みエージェントのruntimeArnを返す。初回呼び出し時にRegistryから取得。"""
     cache_key = f"arn:{record_name}"
     if cache_key not in _cache:
         for rec in _list_all_records("A2A"):
@@ -135,9 +135,9 @@ def get_agent_runtime_arn(record_name: str) -> str:
 
 
 def discover_by_capability(capability: str) -> list[dict]:
-    """Return all MCP servers tagged with the given capability.
+    """指定したcapabilityタグを持つすべてのMCPサーバーを返す。
 
-    Each entry has: name, runtime_arn, runtime_id, endpoint_id.
+    各エントリには name、runtime_arn、runtime_id、endpoint_id が含まれる。
     """
     results: list[dict] = []
     for rec in _list_all_records("MCP"):
@@ -157,10 +157,10 @@ def discover_by_capability(capability: str) -> list[dict]:
 
 
 def fetch_system_prompt(arn: str) -> str:
-    """Fetch prompt text from Bedrock Prompt Management by ARN.
+    """ARNを指定してBedrock Prompt ManagementからプロンプトテキストをFetchする。
 
-    Fetches the default variant's text template. Raises RuntimeError on failure.
-    Module-level cache ensures at most one API call per container lifetime.
+    デフォルトバリアントのテキストテンプレートを取得する。失敗時はRuntimeErrorを送出。
+    モジュールレベルのキャッシュによりコンテナのライフタイム中に最大1回のAPIコール。
     """
     cache_key = f"prompt:{arn}"
     if cache_key not in _cache:
@@ -175,10 +175,10 @@ def fetch_system_prompt(arn: str) -> str:
 
 
 def discover_skills(skill_names: list[str]) -> list:
-    """Return Strands Skill objects for the given skill names from the Registry.
+    """Registryから指定したスキル名のStrands Skillオブジェクトを返す。
 
-    Searches AGENT_SKILLS records whose name matches "agora-{skill_name}".
-    Results are cached at module level; call once per container lifetime.
+    "agora-{skill_name}" に一致するAGENT_SKILLSレコードを検索する。
+    結果はモジュールレベルでキャッシュされる。コンテナのライフタイム中に1回呼び出すこと。
     """
     from strands import Skill
 
@@ -214,10 +214,58 @@ def discover_skills(skill_names: list[str]) -> list:
     return results
 
 
-def discover_a2a_agents() -> list[dict]:
-    """Return all A2A agents with capability='a2a-agent'.
+def get_registry_mcp_url() -> str:
+    """Registry MCP エンドポイント URL を返す。IAM SigV4 認証が必要。"""
+    session = boto3.session.Session()
+    region = session.region_name or "us-east-1"
+    return f"https://bedrock-agentcore.{region}.amazonaws.com/registry/{_registry_id()}/mcp"
 
-    Each entry has: name, agent_type, runtime_arn, runtime_id, endpoint_id.
+
+def fetch_skill_by_name(name: str) -> object | None:
+    """スキル名で Skill オブジェクトを取得する。name は 'api-error-diagnosis-runbook' 形式。
+
+    Registry から SKILL.md 本文を取得して Skill.from_content() で返す。
+    見つからない場合は None を返す。
+    """
+    from strands import Skill
+
+    record_name = f"agora-{name}"
+    cache_key = f"skill:{record_name}"
+    if cache_key in _cache:
+        return _cache[cache_key]
+
+    for rec in _list_all_records("AGENT_SKILLS"):
+        if rec.get("name") != record_name:
+            continue
+        if rec.get("status") not in _ACTIVE_STATUSES:
+            logger.warning("Skill record '%s' not in active status — skipping", record_name)
+            continue
+        try:
+            detail = _control.get_registry_record(
+                registryId=_registry_id(), recordId=rec["recordId"]
+            )
+            skill_md_obj = detail.get("descriptors", {}).get("agentSkills", {}).get("skillMd", {})
+            markdown = (
+                skill_md_obj.get("inlineContent", "")
+                if isinstance(skill_md_obj, dict)
+                else skill_md_obj
+            )
+            if markdown:
+                skill = Skill.from_content(markdown)
+                _cache[cache_key] = skill
+                logger.info("Fetched skill '%s' from Registry", record_name)
+                return skill
+        except Exception:
+            logger.exception("Failed to fetch skill '%s'", record_name)
+
+    logger.warning("Skill '%s' not found in Registry", record_name)
+    return None
+
+
+def discover_a2a_agents() -> list[dict]:
+    """capability='a2a-agent' を持つすべてのA2Aエージェントを返す。
+
+    各エントリには name、agent_type、runtime_arn、runtime_id、endpoint_id が含まれる。
     """
     results: list[dict] = []
     for rec in _list_all_records("A2A"):

@@ -648,6 +648,12 @@ class AgoraStack(cdk.Stack):
             "Resolution Agent system prompt",
             (_AGENTS_DIR / "resolution" / "system_prompt.md").read_text(),
         )
+        self.judgment_prompt, self.judgment_prompt_version = _make_text_prompt(
+            "DiagnosisJudgmentPrompt",
+            "agora-diagnosis-judgment-prompt",
+            "Diagnosis Agent runbook judgment prompt",
+            (_AGENTS_DIR / "diagnosis" / "judgment_prompt.md").read_text(),
+        )
         self.dispatcher_prompt, self.dispatcher_prompt_version = _make_text_prompt(
             "DispatcherUserPrompt",
             "agora-dispatcher-user-prompt",
@@ -1207,6 +1213,8 @@ class AgoraStack(cdk.Stack):
         for agent in _A2A_AGENTS:
             env_vars = dict(agent["env"])
             env_vars["SYSTEM_PROMPT_ARN"] = _a2a_prompt_arns[agent["name"]]
+            if agent["name"] == "diagnosis":
+                env_vars["JUDGMENT_PROMPT_ARN"] = self.judgment_prompt_version.attr_arn
             env_vars["AGENT_OBSERVABILITY_ENABLED"] = "true"
             env_vars["OTEL_SERVICE_NAME"] = f"agora-{agent['name']}"
             cid = _logical_id(agent["runtime_name"]) + "Runtime"
@@ -1675,5 +1683,8 @@ class AgoraStack(cdk.Stack):
         cdk.CfnOutput(self, "GatewayPromptArn", value=self.gateway_prompt_version.attr_arn)
         cdk.CfnOutput(self, "TriagePromptArn", value=self.triage_prompt_version.attr_arn)
         cdk.CfnOutput(self, "DiagnosisPromptArn", value=self.diagnosis_prompt_version.attr_arn)
+        cdk.CfnOutput(
+            self, "DiagnosisJudgmentPromptArn", value=self.judgment_prompt_version.attr_arn
+        )
         cdk.CfnOutput(self, "ResolutionPromptArn", value=self.resolution_prompt_version.attr_arn)
         cdk.CfnOutput(self, "DispatcherPromptArn", value=self.dispatcher_prompt_version.attr_arn)

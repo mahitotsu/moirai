@@ -28,19 +28,19 @@ async def search_stackoverflow(
     tags: list[str] | None = None,
     num_results: int = 5,
 ) -> str:
-    """Search Stack Overflow for questions and accepted answers related to a technical failure.
+    """技術的な障害に関連する質問と回答をStack Overflowで検索する。
 
     Args:
-        service: The service or technology where the failure occurred
-            (e.g. "AWS Lambda", "PostgreSQL", "Python boto3").
-        error_type: The type of failure or error observed
-            (e.g. "timeout", "connection refused", "memory limit exceeded", "permission denied").
-        tags: Optional SO tags to narrow results (e.g. ["aws-lambda", "python"]).
-            Infer from service when not explicitly known.
-        num_results: Number of results to return (default 5, max 10).
+        service: 障害が発生したサービスまたは技術
+            （例："AWS Lambda"、"PostgreSQL"、"Python boto3"）。
+        error_type: 観測された障害またはエラーの種類
+            （例："timeout"、"connection refused"、"memory limit exceeded"、"permission denied"）。
+        tags: 結果を絞り込むSOタグ（省略可）（例：["aws-lambda", "python"]）。
+            明示的に不明な場合はサービス名から推測する。
+        num_results: 返す結果数（デフォルト5、最大10）。
 
     Returns:
-        Formatted text with top questions, their scores, and accepted answers.
+        上位の質問・スコア・承認済み回答を含むフォーマット済みテキスト。
     """
     try:
         items = await _get_client().search(

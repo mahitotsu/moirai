@@ -1,50 +1,46 @@
 ---
 name: resolution-documentation-standard
-description: Organizational standard for IT incident resolution documentation and ticket closure
+description: Agora ITインシデント解決ドキュメンテーションとチケットクローズの組織標準
 ---
 
-# Resolution Documentation Standard
+# 解決ドキュメンテーション標準
 
-Apply this standard when closing IT incident tickets in the Agora system.
-All fields must meet these requirements for the ticket to be considered properly documented.
+AgoraシステムのITインシデントチケットをクローズする際にこの標準を適用してください。
+チケットが適切にドキュメント化されたとみなされるには、すべてのフィールドがこれらの要件を満たしている必要があります。
 
-## Required Fields for Ticket Closure
+## チケットクローズに必要なフィールド
 
-### `resolution` — Full Resolution Text
+### `resolution` — 完全な解決策テキスト
 
-- **Must include**: Numbered list of step-by-step actions taken or recommended.
-- **Specificity**: Use exact commands, parameter names, and tool names.
-  Write `aws fis stop-experiment --id <experiment-id>` not "stop the experiment".
-- **Order**: Diagnose → Mitigate → Fix root cause → Verify recovery.
-- **Acknowledge uncertainty**: If diagnosis confidence is low, include diagnostic steps
-  before fix steps.
+- **必須項目**: 実施または推奨する手順の番号付きリスト。
+- **具体性**: 正確なコマンド、パラメータ名、ツール名を使用すること。
+  「実験を停止する」ではなく `aws fis stop-experiment --id <experiment-id>` のように記述する。
+- **順序**: 診断 → 緩和 → 根本原因の修正 → 回復確認。
+- **不確実性の明示**: 診断の確信度が低い場合は、修正手順の前に診断手順を含めること。
 
-### `lesson_learned` — Single Sentence
+### `lesson_learned` — 1文
 
-- **Format**: One concise sentence starting with "Lesson:" that can stand alone as a
-  searchable insight.
-- **Content**: The key takeaway that prevents recurrence or speeds up future diagnosis.
-- **Good examples**:
-  - "Lesson: always suppress CloudWatch alarms before running FIS experiments to avoid false incident pages."
-  - "Lesson: implement exponential backoff with jitter for all AWS API retry logic to prevent throttling cascades."
-- **Bad examples** (too vague): "Lesson: monitor the system carefully." / "Lesson: check logs."
+- **形式**: 「教訓：」で始まる1文。単独で検索可能な洞察として成立する内容にすること。
+- **内容**: 再発防止または将来の診断迅速化に役立つ主要な教訓。
+- **良い例**:
+  - "教訓：FIS実験を実行する前に必ずCloudWatchアラームを抑制し、誤ったインシデント通知を避けること。"
+  - "教訓：スロットリングカスケードを防ぐため、すべてのAWS APIリトライロジックにジッター付き指数バックオフを実装すること。"
+- **悪い例**（抽象的すぎる）: "教訓：システムを注意深く監視すること。" / "教訓：ログを確認すること。"
 
 ### `status`
 
-Must be `"resolved"`.
+`"resolved"` に設定すること。
 
 ### `category`
 
-Use the category determined during triage. Do not change it unless the triage classification
-was clearly incorrect — and if so, note the correction reason in the `resolution` text.
+トリアージ時に決定したカテゴリを使用すること。トリアージ分類が明らかに誤っていた場合を除き変更しないこと — 変更する場合は `resolution` テキスト内に変更理由を記載すること。
 
-## Pre-submission Checklist
+## 提出前チェックリスト
 
-Before calling the ticket update tool, verify:
+チケットアップデートツールを呼び出す前に確認すること：
 
-- [ ] `resolution` steps are specific and actionable — no vague language
-- [ ] `lesson_learned` is a single, memorable sentence starting with "Lesson:"
-- [ ] `status` is set to `"resolved"`
-- [ ] `category` matches the triage classification
-- [ ] All four fields (`status`, `resolution`, `category`, `lesson_learned`) are present
-      — omitting any one is an error
+- [ ] `resolution` の手順が具体的で実行可能 — 曖昧な表現なし
+- [ ] `lesson_learned` が「教訓：」で始まる1文
+- [ ] `status` が `"resolved"` に設定されている
+- [ ] `category` がトリアージ分類と一致している
+- [ ] 4つのフィールド（`status`、`resolution`、`category`、`lesson_learned`）がすべて存在する — いずれか一つでも欠けているとエラー

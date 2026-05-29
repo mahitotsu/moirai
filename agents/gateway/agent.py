@@ -34,12 +34,12 @@ app = BedrockAgentCoreApp()
 
 
 # ---------------------------------------------------------------------------
-# Sub-agent invocation helpers — called as Strands tools
+# サブエージェント呼び出しヘルパー — Strandsツールとして呼び出される
 # ---------------------------------------------------------------------------
 
 
 def _invoke_sub_agent(runtime_arn: str, message: str) -> str:
-    """Call an HTTP-protocol sub-agent via InvokeAgentRuntime and return its response."""
+    """InvokeAgentRuntime経由でHTTPプロトコルのサブエージェントを呼び出し、レスポンスを返す。"""
     payload = json.dumps({"message": message}).encode()
     resp = _agentcore.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
@@ -57,13 +57,13 @@ def _invoke_sub_agent(runtime_arn: str, message: str) -> str:
 
 @tool
 def invoke_triage(incident_description: str) -> str:
-    """Classify an IT incident by severity and category, and generate search terms for diagnosis.
+    """ITインシデントを重要度とカテゴリで分類し、診断用の検索キーワードを生成する。
 
     Args:
-        incident_description: Full description of the IT incident to be classified.
+        incident_description: 分類対象のITインシデントの完全な説明。
 
     Returns:
-        Triage result including severity, category, and suggested search terms.
+        重要度、カテゴリ、推奨検索キーワードを含むトリアージ結果。
     """
     arn = registry.get_agent_runtime_arn(registry.TRIAGE_AGENT_RECORD)
     return _invoke_sub_agent(arn, incident_description)
@@ -71,13 +71,13 @@ def invoke_triage(incident_description: str) -> str:
 
 @tool
 def invoke_diagnosis(triage_result: str) -> str:
-    """Search community knowledge, CloudWatch alarms, and past tickets to diagnose an incident.
+    """コミュニティナレッジ、CloudWatchアラーム、過去チケットを検索してインシデントを診断する。
 
     Args:
-        triage_result: The triage classification output (severity, category, search terms).
+        triage_result: トリアージ分類アウトプット（重要度、カテゴリ、検索キーワード）。
 
     Returns:
-        Diagnosis findings including probable root causes and relevant knowledge sources.
+        推定根本原因と関連ナレッジソースを含む診断結果。
     """
     arn = registry.get_agent_runtime_arn(registry.DIAGNOSIS_AGENT_RECORD)
     return _invoke_sub_agent(arn, triage_result)
@@ -85,14 +85,14 @@ def invoke_diagnosis(triage_result: str) -> str:
 
 @tool
 def invoke_resolution(diagnosis_result: str, ticket_id: str = "") -> str:
-    """Generate a resolution plan and update (or create) the incident ticket.
+    """解決策を立案し、インシデントチケットを更新（または作成）する。
 
     Args:
-        diagnosis_result: The diagnosis findings to base the resolution plan on.
-        ticket_id: Existing ticket ID to update. Omit to create a new ticket.
+        diagnosis_result: 解決策立案の根拠となる診断結果。
+        ticket_id: 更新する既存チケットID。省略すると新規チケットを作成する。
 
     Returns:
-        Resolution plan and confirmation of the ticket update or creation.
+        解決策とチケットの更新または作成の確認。
     """
     arn = registry.get_agent_runtime_arn(registry.RESOLUTION_AGENT_RECORD)
     message = diagnosis_result

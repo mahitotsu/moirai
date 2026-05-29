@@ -1,36 +1,34 @@
 ---
 name: incident-severity-classification
-description: Agora IT ops organization-approved criteria for classifying incident severity and category
+description: Agora IT運用チームが承認したインシデント重要度とカテゴリの分類基準
 ---
 
-# Incident Severity & Category Classification
+# インシデント重要度・カテゴリ分類
 
-This skill defines the classification standards approved by the Agora IT operations team.
-Apply these criteria consistently across all incident handling stages.
+このスキルはAgoraのIT運用チームが承認した分類基準を定義します。
+すべてのインシデント対応フェーズで一貫してこれらの基準を適用してください。
 
-## Severity Tiers
+## 重要度ティア
 
-| Severity | Definition | SLA Response Target |
+| 重要度 | 定義 | SLA目標応答時間 |
 |---|---|---|
-| **critical** | Production fully down, data loss risk, or active security breach | 15 minutes |
-| **high** | Major feature broken, many users impacted, SLA breach imminent | 1 hour |
-| **medium** | Partial degradation, workaround exists, limited user impact | 4 hours |
-| **low** | Minor issue, cosmetic bug, or single-user impact | 1 business day |
+| **critical** | 本番環境が完全に停止、データ損失リスク、またはセキュリティ侵害が進行中 | 15分 |
+| **high** | 主要機能の障害、多数のユーザーに影響、SLA違反が差し迫っている | 1時間 |
+| **medium** | 部分的な機能低下、回避策あり、ユーザーへの影響が限定的 | 4時間 |
+| **low** | 軽微な問題、表示上のバグ、または単一ユーザーへの影響 | 1営業日 |
 
-When in doubt between two severity levels, escalate to the higher one.
+2つの重要度レベルの間で迷った場合は、より高い方に引き上げること。
 
-## Category Taxonomy
+## カテゴリ分類
 
-| Category | When to apply |
+| カテゴリ | 適用条件 |
 |---|---|
-| **database** | Connection errors, query timeouts, replication lag, OOM in DB process |
-| **network** | Timeouts, 502/503/504 errors, DNS failures, AWS API throttling, packet loss |
-| **memory** | OOM kills, high memory usage alerts, memory leak indicators |
-| **deploy** | Post-deployment regressions, container startup failures, config drift |
-| **performance** | High CPU/latency, slow queries, throughput degradation |
-| **security** | Authentication failures, unauthorized access attempts, certificate errors |
-| **other** | Anything that does not clearly fit the above categories |
+| **database** | 接続エラー、クエリタイムアウト、レプリケーション遅延、DBプロセスのOOM |
+| **network** | タイムアウト、502/503/504エラー、DNS障害、AWS APIスロットリング、パケットロス |
+| **memory** | OOMキル、高メモリ使用率アラート、メモリリークの兆候 |
+| **deploy** | デプロイ後のリグレッション、コンテナ起動失敗、設定ドリフト |
+| **performance** | 高CPU/レイテンシ、スロークエリ、スループット低下 |
+| **security** | 認証失敗、不正アクセス試行、証明書エラー |
+| **other** | 上記のいずれにも明確に当てはまらないもの |
 
-**Note on AWS API throttling**: `ThrottlingException` and `RequestLimitExceeded` errors from
-AWS APIs (e.g., EC2, Lambda) map to the **network** category, as they represent service
-availability degradation from the caller's perspective.
+**AWS APIスロットリングについて**: AWS APIからの `ThrottlingException` および `RequestLimitExceeded` エラー（EC2、Lambdaなど）は **network** カテゴリに分類します。呼び出し元の観点からサービス可用性の低下を表しているためです。

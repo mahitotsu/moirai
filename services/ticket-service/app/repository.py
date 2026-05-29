@@ -20,7 +20,7 @@ def _now() -> str:
 def _parse_history(raw: list[dict[str, Any]]) -> list[HistoryEntry]:
     entries = []
     for e in raw:
-        m = e["M"]  # each list element is wrapped in {"M": {...}} by DynamoDB wire format
+        m = e["M"]  # DynamoDBワイヤーフォーマットでは各リスト要素が {"M": {...}} でラップされる
         entries.append(HistoryEntry(
             timestamp=m["timestamp"]["S"],
             status=m["status"]["S"],
@@ -119,8 +119,8 @@ class TicketRepository:
             if data.status == "resolved":
                 expr_parts.append("resolved_at = :resolved_at")
                 values[":resolved_at"] = {"S": now}
-            # Only append history when the status is actually changing to avoid
-            # duplicate entries caused by DynamoDB Streams retry re-invocations.
+            # DynamoDB Streamsのリトライ再呼び出しによる重複エントリを避けるため、
+            # 実際にステータスが変化した場合のみ履歴に追加する
             if data.status != existing.status:
                 entry = HistoryEntry(
                     timestamp=now,
@@ -154,7 +154,7 @@ class TicketRepository:
             "ReturnValues": "ALL_NEW",
         }
         if attr_names:
-            # status is a reserved word in DynamoDB; only add when non-empty
+            # statusはDynamoDBの予約語のため、空でない場合のみ ExpressionAttributeNames に追加する
             kwargs["ExpressionAttributeNames"] = attr_names
         resp = self._client.update_item(**kwargs)
         return _to_ticket(resp["Attributes"])

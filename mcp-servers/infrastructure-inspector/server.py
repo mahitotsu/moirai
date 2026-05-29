@@ -43,19 +43,19 @@ def _logs() -> Any:
 
 @mcp.tool()
 def inspect_lambda(function_name: str) -> str:
-    """Get configuration, tags, and trigger information for an AWS Lambda function.
+    """AWS Lambda関数の設定・タグ・トリガー情報を取得する。
 
-    Use this to understand what a failing Lambda function does, how it is configured
-    (timeout, memory, environment), what event sources trigger it, and which
-    CloudFormation stack owns it. The 'aws:cloudformation:stack-name' tag (if present)
-    can be used with describe_cfn_stack to explore the full resource topology.
+    障害が発生しているLambda関数の動作内容、設定（タイムアウト・メモリ・環境変数）、
+    イベントソース（トリガー）、および所有するCloudFormationスタックを把握するために使用する。
+    'aws:cloudformation:stack-name' タグ（存在する場合）を describe_cfn_stack と組み合わせることで
+    完全なリソーストポロジーを探索できる。
 
     Args:
-        function_name: The name or ARN of the Lambda function (e.g. "agora-fake-api-server").
+        function_name: Lambda関数の名前またはARN（例："agora-fake-api-server"）。
 
     Returns:
-        Function description, runtime, timeout, memory, environment variable keys,
-        event source mappings (triggers), and all resource tags.
+        関数の説明、ランタイム、タイムアウト、メモリ、環境変数キー、
+        イベントソースマッピング（トリガー）、および全リソースタグ。
     """
     try:
         resp = _lambda().get_function(FunctionName=function_name)
@@ -99,19 +99,18 @@ def inspect_lambda(function_name: str) -> str:
 
 @mcp.tool()
 def get_lambda_recent_errors(function_name: str, minutes: int = 15) -> str:
-    """Fetch recent error and exception log lines from a Lambda function's CloudWatch log group.
+    """Lambda関数のCloudWatchロググループから直近のエラーと例外ログ行を取得する。
 
-    Call this first when a Lambda alarm fires. It surfaces the actual error messages
-    (exception type, error code, stack trace) so you can understand the root cause
-    without any prior knowledge of what might be failing.
+    Lambdaアラームが発生した際に最初に呼び出すツール。例外の種類・エラーコード・スタックトレースなど
+    実際のエラーメッセージを表示し、何が失敗しているかを事前知識なしで把握できる。
 
     Args:
-        function_name: The Lambda function name (e.g. "agora-fake-api-server").
-        minutes: How many minutes back to search (default 15).
+        function_name: Lambda関数名（例："agora-fake-api-server"）。
+        minutes: 何分前まで遡って検索するか（デフォルト15分）。
 
     Returns:
-        Up to 30 most recent log lines containing ERROR, Exception, or Traceback,
-        with timestamps. If no errors are found, returns a message indicating that.
+        ERROR、Exception、Tracebackを含む直近のログ行（最大30件）とタイムスタンプ。
+        エラーが見つからない場合はその旨を示すメッセージを返す。
     """
     log_group = f"/aws/lambda/{function_name}"
     end_ms = int(time.time() * 1000)
@@ -146,15 +145,15 @@ def get_lambda_recent_errors(function_name: str, minutes: int = 15) -> str:
 
 @mcp.tool()
 def list_active_fis_experiments() -> str:
-    """List currently running AWS FIS (Fault Injection Simulator) experiments.
+    """実行中のAWS FIS（Fault Injection Simulator）実験を一覧表示する。
 
-    Use this to determine what fault injection is actively occurring in the environment.
-    Returns experiment IDs, injected fault types, targeted resources, and start times.
-    Call this when an alarm fires and the root cause may be deliberate fault injection.
+    環境で現在実行中のフォルトインジェクションを確認するために使用する。
+    実験ID・インジェクションされた障害の種類・ターゲットリソース・開始時刻を返す。
+    アラームが発生し、根本原因が意図的なフォルトインジェクションである可能性がある場合に呼び出す。
 
     Returns:
-        Details of all running FIS experiments including the fault being injected,
-        or a message indicating no experiments are running.
+        実行中のFIS実験の詳細（インジェクションされている障害を含む）、
+        または実験が実行されていないことを示すメッセージ。
     """
     try:
         resp = _fis().list_experiments()
@@ -203,18 +202,17 @@ def list_active_fis_experiments() -> str:
 
 @mcp.tool()
 def describe_cfn_stack(stack_name: str) -> str:
-    """Describe an AWS CloudFormation stack and its deployed resources.
+    """AWS CloudFormationスタックとデプロイ済みリソースを説明する。
 
-    Use this to understand the infrastructure components that support a failing service.
-    Particularly useful for inspecting the FaultInjectionStack (which contains the
-    fake-api-server Lambda and FIS template) or the AgoraStack.
+    障害が発生しているサービスを支えるインフラコンポーネントを把握するために使用する。
+    FaultInjectionStack（fake-api-server LambdaとFISテンプレートを含む）や
+    AgoraStackの検査に特に有用。
 
     Args:
-        stack_name: The CloudFormation stack name (e.g. "FaultInjectionStack", "AgoraStack").
+        stack_name: CloudFormationスタック名（例："FaultInjectionStack"、"AgoraStack"）。
 
     Returns:
-        Stack status, creation time, and a list of all resources with their types,
-        logical IDs, and physical IDs.
+        スタックのステータス・作成時刻・全リソースの一覧（リソースタイプ・論理ID・物理ID付き）。
     """
     try:
         stacks_resp = _cfn().describe_stacks(StackName=stack_name)

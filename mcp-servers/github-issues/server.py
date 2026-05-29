@@ -39,21 +39,21 @@ async def search_github_issues(
     labels: list[str] | None = None,
     num_results: int = 5,
 ) -> str:
-    """Search GitHub Issues for bug reports and discussions related to a technical failure.
+    """技術的な障害に関連するバグレポートとディスカッションをGitHub Issuesで検索する。
 
     Args:
-        service: The service or library where the failure occurred
-            (e.g. "AWS Lambda", "boto3", "aws-cdk").
-        error_type: The type of failure or error observed
-            (e.g. "timeout", "InvalidParameterException", "connection refused").
-        repos: Optional list of repositories to restrict search to
-            (e.g. ["boto/boto3", "aws/aws-cdk"]).
-        state: Filter by issue state — "open", "closed", or "all" (default).
-        labels: Optional issue labels to filter by (e.g. ["bug", "regression"]).
-        num_results: Number of results to return (default 5, max 10).
+        service: 障害が発生したサービスまたはライブラリ
+            （例："AWS Lambda"、"boto3"、"aws-cdk"）。
+        error_type: 観測された障害またはエラーの種類
+            （例："timeout"、"InvalidParameterException"、"connection refused"）。
+        repos: 検索を制限するリポジトリのリスト（省略可）
+            （例：["boto/boto3", "aws/aws-cdk"]）。
+        state: Issueの状態でフィルタ — "open"、"closed"、または "all"（デフォルト）。
+        labels: フィルタリングするIssueラベル（省略可）（例：["bug", "regression"]）。
+        num_results: 返す結果数（デフォルト5、最大10）。
 
     Returns:
-        Formatted text with matching issues, their state, labels, and URLs.
+        一致するIssue・その状態・ラベル・URLを含むフォーマット済みテキスト。
     """
     try:
         items = await _get_client().search_issues(
