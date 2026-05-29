@@ -5,17 +5,21 @@
 
 ## チェック項目と対応方針
 
-### 1. 実施確認 — BACKLOG.md との整合性
+### 1. コンポーネント網羅性の確認
 
-BACKLOG.md で `[x]` になっているタスクを対象に、実装が実際に存在するか確認する。
+CLAUDE.md に定義されたディレクトリ構成と実態が一致しているかを確認する。
 
 ```bash
-# 完了済みタスクに対応するファイル・ディレクトリが存在するか
-find services/ mcp-servers/ agents/ infrastructure/ ui/ -type f | sort
+# 各コンポーネントディレクトリの実ファイルを列挙
+find services/ mcp-servers/ agents/ -type f -name "*.py" | sort
 ```
 
-- ファイルが存在しない → **即修正**（作成または BACKLOG.md の完了マークを戻す）
-- ファイルが存在しても中身がスタブのみ → 問題としてリストアップ
+各コンポーネントについて以下を確認する。
+
+- **FastAPI サービス**: `app/main.py`, `app/models.py`, `app/repository.py`, `tests/` が揃っているか
+- **FastMCP サーバー**: `server.py`, `tests/` が揃っているか
+- **エージェント**: `agent.py`, `system_prompt.md`, `tools.py`(必要な場合), `tests/` が揃っているか
+- 中身がスタブのみのファイルがあれば問題としてリストアップ
 
 ### 2. CLAUDE.md 規約への準拠確認
 
@@ -50,7 +54,7 @@ grep -rn "https\?://[^\"']*\.(amazonaws\.com\|execute-api)" services/ agents/ --
 
 - **pyproject.toml の構造**: 各コンポーネントの `pyproject.toml` がルートの uv workspace メンバーとして定義されているか
 - **Dockerfile**: `--platform linux/arm64` なし（make build 側で指定）、uv マルチステージビルドになっているか
-- **CONCEPT.md との整合**: 実装がCONCEPTの設計原則（責務分割・capability ベース発見・業務データとエージェント文脈の分離等）に従っているか
+- **PITCH.md との整合**: 実装が PITCH.md の設計原則（責務分割・capability ベース発見・業務データとエージェント文脈の分離等）に従っているか
 - **CLAUDE.md との整合**: CLAUDE.md に記載のディレクトリ構成・規約と実態が一致しているか
 
 ## 結果の報告形式
