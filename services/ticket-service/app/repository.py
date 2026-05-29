@@ -204,14 +204,44 @@ class TicketRepository:
             returnMetadata=True,
             returnDistance=True,
         )
-        tickets: list[SimilarTicket] = []
-        for v in result.get("vectors", []):
+        vectors = result.get("vectors", [])
+        if not vectors:
+            return []
+
+        # Collect vector metadata
+        vector_data: list[dict] = []
+        for v in vectors:
             meta = v.get("metadata", {})
-            tickets.append(SimilarTicket(
-                ticket_id=meta.get("ticket_id", v["key"]),
-                title=meta.get("title", ""),
-                category=meta.get("category", ""),
-                severity=meta.get("severity", ""),
-                distance=v.get("distance", 0.0),
-            ))
-        return tickets
+            vector_data.append({
+                "ticket_id": meta.get("ticket_id", v["key"]),
+                "title": meta.get("title", ""),
+                "category": meta.get("category", ""),
+                "severity": meta.get("severity", ""),
+                "distance": v.get("distance", 0.0),
+            })
+
+        # Enrich with resolution and lesson_learned from DynamoDB
+        resolution_map: dict[str, tuple[str | None, str | None]] = {}
+        keys = [{"ticket_id": {"S": vd["ticket_id"]}} for vd in vector_data]
+        batch_resp = self._client.batch_get_item(
+            RequestItems={self._table: {"Keys": keys}}
+        )
+        for item in batch_resp.get("Responses", {}).get(self._table, []):
+            tid = item.get("ticket_id", {}).get("S", "")
+            resolution_map[tid] = (
+                item.get("resolution", {}).get("S"),
+                item.get("lesson_learned", {}).get("S"),
+            )
+
+        return [
+            SimilarTicket(
+                ticket_id=vd["ticket_id"],
+                title=vd["title"],
+                category=vd["category"],
+                severity=vd["severity"],
+                distance=vd["distance"],
+                resolution=resolution_map.get(vd["ticket_id"], (None, None))[0],
+                lesson_learned=resolution_map.get(vd["ticket_id"], (None, None))[1],
+            )
+            for vd in vector_data
+        ]

@@ -141,6 +141,63 @@
         }
       }
     },
+    "/tickets/search": {
+      "get": {
+        "summary": "Search Tickets",
+        "description": "ベクトル類似度検索で過去の類似インシデントを取得する。S3 Vectors に保存された解決済みチケットの埋め込みに対して意味的類似度検索を行い、最も近い past incidents を返す。各結果には resolution と lesson_learned が含まれる。distance が小さいほど類似度が高い（0 が完全一致）。",
+        "operationId": "search_tickets_tickets_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "自然言語クエリ（例: 'database connection timeout'）",
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "top_k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 5,
+              "title": "Top K"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SimilarTicket"
+                  },
+                  "title": "Response Search Tickets Tickets Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tickets/{ticket_id}": {
       "get": {
         "summary": "Get Ticket",
@@ -252,6 +309,62 @@
   },
   "components": {
     "schemas": {
+      "SimilarTicket": {
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "title": "Ticket Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "distance": {
+            "type": "number",
+            "title": "Distance",
+            "description": "ベクトル距離（0が完全一致、小さいほど類似度が高い）"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "lesson_learned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Learned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticket_id",
+          "title",
+          "category",
+          "severity",
+          "distance"
+        ],
+        "title": "SimilarTicket"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {

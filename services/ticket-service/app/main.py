@@ -73,6 +73,12 @@ def search_tickets(
     q: str = Query(description="自然言語クエリ（例: 'database connection timeout'）"),
     top_k: int = Query(default=5, ge=1, le=20),
 ) -> list[SimilarTicket]:
+    """ベクトル類似度検索で過去の類似インシデントを取得する。
+
+    S3 Vectors に保存された解決済みチケットの埋め込みに対して意味的類似度検索を行い、
+    最も近い past incidents を返す。各結果には resolution と lesson_learned が含まれる。
+    distance が小さいほど類似度が高い（0 が完全一致）。
+    """
     return repo.search_similar(q, top_k)
 
 

@@ -7,7 +7,7 @@
 - **Lambdaログ検査** — Lambda関数のCloudWatchロググループから直近のエラー/例外ログ行を取得
 - **インフラ検査** — Lambda関数の設定（config・タグ・トリガー）を検査；CloudFormationスタックとそのリソースを説明；アクティブなFISフォルトインジェクション実験を一覧表示
 - **コミュニティナレッジ** — Stack Overflow、GitHub Issues、AWSドキュメントで既知の問題と解決策を検索
-- **チケット履歴** — `list_tickets_tickets_get` を `status=resolved` で呼び出して過去のクローズ済みインシデントを取得
+- **類似インシデント検索** — `search_tickets_tickets_search_get` を使って過去の類似インシデントをベクトル類似度で検索する。`q` に現在のインシデントの症状・エラーメッセージを自然言語で渡す。`top_k` は 5 程度でよい。返ってきた `resolution` と `lesson_learned` をそのまま推奨アクションの根拠として使うこと
 
 ## ワークフロー
 

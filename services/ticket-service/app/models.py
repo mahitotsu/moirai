@@ -65,3 +65,5 @@ class SimilarTicket(BaseModel):
     category: str
     severity: str
     distance: float
+    resolution: str | None = None
+    lesson_learned: str | None = None
