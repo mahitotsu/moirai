@@ -128,12 +128,15 @@ AgentCore は Bedrock の一機能群で、Runtime・Gateway・Registry・Observ
 
 ### メインシナリオ：監視駆動の完全自動化
 
-デモの操作は 2 コマンドで完結する。
+デモの操作は 3 コマンドで完結する。
 
 ```
+make demo-seed    # 過去のサンプルチケット 52 件を投入（初回のみ）
 make demo-start   # Scheduler 有効化（正常メトリクスの生成を開始）
 make demo-inject  # FIS 実験開始（障害注入・自動パイプライン起動）
 ```
+
+`make demo-seed` は初回のみ実行する。7 カテゴリ・再発クラスター付きの resolved チケット 52 件を Ticket Service API 経由で投入し、DynamoDB Streams 経由で Knowledge テーブルと S3 Vectors ベクトルインデックスを自動整備する。類似検索・横断クエリのデモが成立するためのデータ量を事前に確保するために必要。
 
 以降はすべて自動で動く。
 
@@ -158,17 +161,25 @@ make demo-inject  # FIS 実験開始（障害注入・自動パイプライン�
     severity=high、category=network と分類（ThrottlingException → network カテゴリ、スキル定義に基づく）
     モデル: Claude Haiku（ツールなし、分類特化で高速応答）
     ↓ A2A
-  Diagnosis Agent
-    Registry で capability="community-knowledge" を持つ MCP 群を発見し並列検索
-    → Stack Overflow MCP : 上位解決策を取得
-    → GitHub Issues MCP  : 類似バグレポートを照合
-    → AWS Docs MCP       : Lambda / FIS ドキュメントを参照
-    → Ticket Service MCP : 過去の類似インシデントを確認
-    → CloudWatch MCP     : 障害メトリクスを参照
-    モデル: Claude Sonnet（MCP × structured_output で根拠ある診断）
+  Diagnosis Agent（2段階 + Strands GraphBuilder 並列実行）
+    [Agent 1: 判定] Registry MCP の search_registry_records でランブックを動的選択
+      → 症状・エラー文字列に基づき適切なランブックを 1〜3 件選ぶ
+        - api-error-diagnosis-runbook : ThrottlingException / API エラー
+        - lambda-oom-runbook          : OOM / メモリ高使用率
+        - deploy-regression-runbook   : デプロイ後リグレッション
+        - db-connection-runbook       : DB 接続エラー
+    [Agent 2+: 診断] 選択されたランブック毎に GraphBuilder で並列実行
+      → 各 DiagnosisAgent がランブック手順に従い MCP ツールを呼び出す
+        - CloudWatch MCP              : 障害メトリクス・アラーム確認
+        - Infrastructure Inspector MCP: Lambda/FIS/CloudFormation 状態確認
+        - Stack Overflow MCP          : コミュニティの解決策を検索
+        - GitHub Issues MCP           : 類似バグレポートを照合
+        - AWS Docs MCP                : 公式ドキュメント参照
+        - Ticket Service MCP          : S3 Vectors ベクトル検索で過去の類似インシデントを取得
+    モデル: Claude Sonnet（ランブック × MCP × structured_output で DiagnosisResult を生成）
     ↓ A2A
   Resolution Agent
-    解決提案を生成し Ticket を更新
+    複数の DiagnosisResult を受け取り優先順位付き解決手順を生成し Ticket を更新
     → status: resolved, lesson_learned: "..." を書き込む
     モデル: Claude Sonnet（structured_output で全フィールドを確実に埋める）
 
@@ -296,9 +307,9 @@ REST API の OpenAPI 仕様から MCP ツールを自動生成するサービス
 #### Amazon Bedrock AgentCore Registry
 エージェントと MCP サーバーを capability タグ付きで登録・管理するサービスカタログ。
 
-**デモでの役割**: Diagnosis Agent が `capability="community-knowledge"` を持つ MCP サーバーを動的に発見して呼び出す。Stack Overflow や GitHub Issues MCP のエンドポイントをコードに書かずに済む。MCP サーバーを追加・削除してもエージェントの再デプロイが不要。
+**デモでの役割**: Diagnosis Agent が 2 段階で Registry を活用する。まず Agent 1（判定）が `search_registry_records` でインシデントの症状に合致するランブック（診断手順書）を検索・選択する。次に Agent 2+（診断）が `capability="community-knowledge"` を持つ MCP サーバーを動的に発見して呼び出す。ランブックや MCP サーバーのエンドポイントをコードに書かずに済み、追加・削除してもエージェントの再デプロイが不要。
 
-**選定理由**: エンドポイントをコードに埋め込むと、サーバー追加・変更のたびにエージェントの再デプロイが必要になる。Registry の最大の価値は capability タグによる意味的な発見であり、「何ができるサーバーか」で検索できることがエンドポイントの動的管理よりも本質的な差分。
+**選定理由**: エンドポイントをコードに埋め込むと、サーバー追加・変更のたびにエージェントの再デプロイが必要になる。Registry の最大の価値は `search_registry_records` によるセマンティック検索であり、「何ができるサーバーか」「どのランブックが適切か」を動的に決定できることがエンドポイントの静的管理との本質的な差分。
 
 #### Amazon Bedrock AgentCore Observability
 OTEL 準拠のトレーシングをエージェントに自動計装し、CloudWatch へ送信するサービス。
@@ -310,7 +321,7 @@ OTEL 準拠のトレーシングをエージェントに自動計装し、CloudW
 #### Strands Agents SDK
 AWS が OSS として公開している Python 製エージェントフレームワーク。`@tool` デコレータでツールを定義し、Bedrock の Converse API をネイティブに使う。
 
-**デモでの役割**: 4 エージェントの実装に使用。AgentCore の Plugin システム（Registry 発見・Observability トレース）をプラグインとして組み込むだけで有効になる。A2A によるエージェント間呼び出しも Runtime と組み合わせることで直接対応。
+**デモでの役割**: 4 エージェントの実装に使用。AgentCore の Plugin システム（Registry 発見・Observability トレース）をプラグインとして組み込むだけで有効になる。Diagnosis Agent では `GraphBuilder` を使い、判定エージェントが選択したランブック数に応じた並列エージェントグラフを動的に生成して同時診断する。A2A によるエージェント間呼び出しも Runtime と組み合わせることで直接対応。
 
 **選定理由（AWS 上で動かす場合）**:
 
@@ -319,7 +330,7 @@ AWS が OSS として公開している Python 製エージェントフレーム
 | Bedrock Converse API との統合 | ネイティブサポート。設定がシンプル | `langchain-aws` の `ChatBedrock` でカバー。ラッパーが必要 |
 | AgentCore Plugins（Registry / Observability）との連携 | `plugins=[]` に 1 行渡すだけで有効な公式パッケージ | 自前実装が必要（2026年5月時点で公式統合なし） |
 | `@tool` デコレータによるツール定義 | `@tool` は LangChain でも採用済みの同等パターン。差分は AgentCore Plugins とのネイティブ統合の有無 | `@tool` デコレータを主流として採用済み（langchain-core） |
-| マルチエージェント（A2A） | AgentCore Runtime と組み合わせて直接対応 | LangGraph のマルチエージェントパターン（supervisor / subgraph）で構築可能。A2A プロトコルの公式サポートはなし |
+| マルチエージェント（A2A / 並列グラフ） | AgentCore Runtime と組み合わせて直接対応。`GraphBuilder` でエージェントグラフを動的生成し並列実行できる | LangGraph のマルチエージェントパターン（supervisor / subgraph）で構築可能。A2A プロトコルの公式サポートはなし |
 | エージェントループの制御 | `@tool` を定義するだけ。順序・終了タイミングは LLM が決定する | フルコントロールが必要な場合、グラフのノード・エッジ・終了条件を開発者が明示的に定義する（`create_react_agent` を使えば同様のループも実現可能） |
 | LLM 性能向上の恩恵 | ツール呼び出しの順序・回数・終了判断を LLM が動的に決定するため、モデルアップグレードがそのままエージェント品質に直結しやすい | 明示的なグラフ設計の場合、フロー制御の範囲内に恩恵が留まる |
 | structured_output | Pydantic モデルを渡すだけで出力を制御できる | 同等の機能あり |
@@ -434,7 +445,7 @@ Lambda 関数の状態・FIS 実験の状況・CloudFormation スタックの状
 | エージェント | モデル | 理由 |
 |---|---|---|
 | Triage Agent | Claude Haiku | 分類基準は Registry から取得した `incident-severity-classification` skill に委譲。ツール不使用・分類特化で高速応答と低コストを優先 |
-| Diagnosis Agent | Claude Sonnet | MCP 並列検索 + structured_output。精度と推論能力が必要 |
+| Diagnosis Agent | Claude Sonnet | ランブック動的選択 + GraphBuilder 並列実行 + structured_output。複数ランブックによる多角診断に精度と推論能力が必要 |
 | Resolution Agent | Claude Sonnet | structured_output で複数フィールドを確実に埋める必要がある |
 | Gateway Agent | Claude Sonnet | 横断クエリ・Guardrails 判断のハブ。バランスを重視 |
 
