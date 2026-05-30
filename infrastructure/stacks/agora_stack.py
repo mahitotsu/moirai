@@ -280,6 +280,7 @@ class AgoraStack(cdk.Stack):
             "dynamodb:UpdateItem",
             "dynamodb:Query",
             "dynamodb:Scan",
+            "dynamodb:BatchGetItem",
         ]
 
         self.ticket_role = iam.Role(
@@ -330,7 +331,12 @@ class AgoraStack(cdk.Stack):
             "ChatProxyRole",
             role_name="agora-chat-proxy-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec],
+            managed_policies=[
+                _basic_exec,
+                # X-Ray Active Tracing: botocore が invoke_agent_runtime に X-Amzn-Trace-Id を付与し
+                # chat-proxy → Gateway → ... が Transaction Search で単一トレースとして連結される
+                iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess"),
+            ],
         )
         self.chat_proxy_role.add_to_policy(
             iam.PolicyStatement(
@@ -388,6 +394,7 @@ class AgoraStack(cdk.Stack):
                 [
                     "lambda:GetFunction",
                     "lambda:ListEventSourceMappings",
+                    "lambda:ListTags",
                     "fis:ListExperiments",
                     "fis:GetExperiment",
                     "fis:GetExperimentTemplate",
@@ -484,6 +491,8 @@ class AgoraStack(cdk.Stack):
                 ],
                 ["*"],
             ),
+            # ADOT distro が bedrock-agentcore namespace で Application Signals メトリクスを書き込む
+            (["cloudwatch:PutMetricData"], ["*"]),
         ]
 
         # Gateway Agent runtime ロール (A2A orchestrator)
@@ -522,6 +531,17 @@ class AgoraStack(cdk.Stack):
                     "cloudwatch:ListMetrics",
                 ],
                 resources=["*"],
+            )
+        )
+        # Diagnosis: Registry MCP SigV4 呼び出し (runbook 選択の search_registry_records)
+        # InvokeRegistryMcp: MCP initialize/tools/list, SearchRegistryRecords: tools/call
+        _per_agent_roles["diagnosis"].add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "bedrock-agentcore:InvokeRegistryMcp",
+                    "bedrock-agentcore:SearchRegistryRecords",
+                ],
+                resources=[f"arn:aws:bedrock-agentcore:*:{self.account}:registry/*"],
             )
         )
 
@@ -795,6 +815,7 @@ class AgoraStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_SERVICE_MB,
             timeout=_TIMEOUT_LONG,
+            tracing=lambda_.Tracing.ACTIVE,
             role=self.chat_proxy_role,
             log_group=logs.LogGroup(
                 self,
@@ -824,6 +845,9 @@ class AgoraStack(cdk.Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaDynamoDBExecutionRole"
                 ),
+                # X-Ray Active Tracing: invoke_agent_runtime に X-Amzn-Trace-Id を付与し
+                # Transaction Search で ticket-dispatcher → Gateway → ... を単一トレースとして連結
+                iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess"),
             ],
         )
         _dispatcher_role.add_to_policy(
@@ -866,6 +890,7 @@ class AgoraStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_WORKER_MB,
             timeout=_TIMEOUT_LONG,
+            tracing=lambda_.Tracing.ACTIVE,
             role=_dispatcher_role,
             log_group=logs.LogGroup(
                 self,
@@ -1398,6 +1423,100 @@ class AgoraStack(cdk.Stack):
         )
 
         # =====================================================================
+        # BEDROCK MODEL INVOCATION LOGGING
+        # アカウントレベル設定: 全モデル呼び出しのプロンプト/レスポンスを CloudWatch Logs に保存
+        # デモ後に「各エージェントが Claude に送ったプロンプト全文」を事後確認するための証跡
+        # CloudFormation ネイティブリソース未対応のため AwsCustomResource で構成
+        # =====================================================================
+        bedrock_invocation_log_group = logs.LogGroup(
+            self,
+            "BedrockInvocationLogs",
+            log_group_name="/aws/bedrock/model-invocation-logs",
+            retention=_LOG_RETENTION,
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
+
+        bedrock_log_role = iam.Role(
+            self,
+            "BedrockLoggingRole",
+            role_name="agora-bedrock-logging-role",
+            assumed_by=iam.ServicePrincipal(
+                "bedrock.amazonaws.com",
+                conditions={"StringEquals": {"aws:SourceAccount": self.account}},
+            ),
+        )
+        bedrock_log_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                ],
+                resources=[
+                    bedrock_invocation_log_group.log_group_arn,
+                    bedrock_invocation_log_group.log_group_arn + ":*",
+                ],
+            )
+        )
+
+        _invocation_logging_config = {
+            "loggingConfig": {
+                "cloudWatchConfig": {
+                    "logGroupName": bedrock_invocation_log_group.log_group_name,
+                    "roleArn": bedrock_log_role.role_arn,
+                },
+                "textDataDeliveryEnabled": True,
+                "imageDataDeliveryEnabled": False,
+                "embeddingDataDeliveryEnabled": True,
+            }
+        }
+        cr.AwsCustomResource(
+            self,
+            "BedrockModelInvocationLogging",
+            install_latest_aws_sdk=False,
+            on_create=cr.AwsSdkCall(
+                service="Bedrock",
+                action="putModelInvocationLoggingConfiguration",
+                parameters=_invocation_logging_config,
+                physical_resource_id=cr.PhysicalResourceId.of("BedrockModelInvocationLogging"),
+            ),
+            on_update=cr.AwsSdkCall(
+                service="Bedrock",
+                action="putModelInvocationLoggingConfiguration",
+                parameters=_invocation_logging_config,
+                physical_resource_id=cr.PhysicalResourceId.of("BedrockModelInvocationLogging"),
+            ),
+            on_delete=cr.AwsSdkCall(
+                service="Bedrock",
+                action="putModelInvocationLoggingConfiguration",
+                # スタック削除時はロギングを無効化（ロールと Log Group も削除されるため必須）
+                parameters={
+                    "loggingConfig": {
+                        "textDataDeliveryEnabled": False,
+                        "imageDataDeliveryEnabled": False,
+                        "embeddingDataDeliveryEnabled": False,
+                    }
+                },
+            ),
+            policy=cr.AwsCustomResourcePolicy.from_statements([
+                iam.PolicyStatement(
+                    actions=[
+                        "bedrock:PutModelInvocationLoggingConfiguration",
+                        "bedrock:GetModelInvocationLoggingConfiguration",
+                    ],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    actions=["iam:PassRole"],
+                    resources=[bedrock_log_role.role_arn],
+                    conditions={"StringEquals": {"iam:PassedToService": "bedrock.amazonaws.com"}},
+                ),
+            ]),
+        )
+
+        # =====================================================================
         # GATEWAY MCP TARGETS — CfnGatewayTarget (mcp.mcpServer.endpoint + SigV4)
         # AgentCore RuntimeでホストされたMCPサーバーをGatewayに登録する。
         # metadataConfiguration で Mcp-Session-Id ヘッダーを許可し、
@@ -1438,6 +1557,7 @@ class AgoraStack(cdk.Stack):
                     "cloudwatch:ListMetrics",
                     "cloudwatch:DescribeAlarms",
                     "cloudwatch:DescribeAlarmsForMetric",
+                    "cloudwatch:DescribeAlarmHistory",
                     "logs:DescribeLogGroups",
                     "logs:DescribeLogStreams",
                     "logs:FilterLogEvents",
