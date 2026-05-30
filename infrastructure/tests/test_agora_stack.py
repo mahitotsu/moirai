@@ -47,8 +47,7 @@ def test_ticket_dispatcher_config(template: Template) -> None:
         {
             "FunctionName": "agora-ticket-dispatcher",
             "Architectures": ["arm64"],
-            "Handler": "lambda_function.handler",
-            "Runtime": "python3.12",
+            "PackageType": "Image",
             "Environment": {
                 "Variables": {
                     "AGENT_RUNTIME_ARN": Match.any_value(),
@@ -64,8 +63,7 @@ def test_knowledge_consumer_config(template: Template) -> None:
         {
             "FunctionName": "agora-knowledge-consumer",
             "Architectures": ["arm64"],
-            "Handler": "lambda_function.handler",
-            "Runtime": "python3.12",
+            "PackageType": "Image",
             "Environment": {
                 "Variables": {
                     "KNOWLEDGE_TABLE_NAME": Match.any_value(),

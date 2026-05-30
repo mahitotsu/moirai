@@ -4,7 +4,8 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
-os.environ.setdefault("AGENT_RUNTIME_ARN", "")
+os.environ.setdefault("AGENT_RUNTIME_ARN", "arn:aws:bedrock-agentcore:::runtime/test")
+os.environ.setdefault("DISPATCHER_PROMPT_ARN", "arn:aws:bedrock:us-east-1::prompt/test")
 
 sys.modules.pop("lambda_function", None)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -70,14 +71,14 @@ def test_remove_is_ignored() -> None:
     mock.assert_not_called()
 
 
-def test_agent_not_called_when_arn_unset() -> None:
-    """AGENT_RUNTIME_ARN 未設定時はエラーを起こさずスキップする (初回デプロイ想定)。"""
-    with (
-        patch.object(lambda_function, "_AGENT_RUNTIME_ARN", ""),
-        patch.object(lambda_function, "_agentcore") as mock_agentcore,
-    ):
-        lambda_function._invoke_gateway_agent("t-1", "title", "high", "desc")
-    mock_agentcore.invoke_agent_runtime.assert_not_called()
+def test_non_alarm_title_is_skipped() -> None:
+    """CloudWatch ALARM: で始まらないチケットはスキップされる。"""
+    with patch.object(lambda_function, "_invoke_gateway_agent") as mock:
+        lambda_function.handler(
+            _streams_event("INSERT", title="Manual: some other ticket"),
+            None,
+        )
+    mock.assert_not_called()
 
 
 def test_invoke_gateway_agent_builds_prompt_with_ticket_info() -> None:
@@ -93,11 +94,7 @@ def test_invoke_gateway_agent_builds_prompt_with_ticket_info() -> None:
         return resp_mock
 
     _template = "ticket={{ticket_id}} title={{title}} severity={{severity}} desc={{description}}"
-    arn = "arn:aws:bedrock-agentcore:::runtime/test"
-    with (
-        patch.object(lambda_function, "_AGENT_RUNTIME_ARN", arn),
-        patch.object(lambda_function, "_get_prompt_template", return_value=_template),
-    ):
+    with patch.object(lambda_function, "_get_prompt_template", return_value=_template):
         lambda_function._agentcore.invoke_agent_runtime.side_effect = fake_invoke
         lambda_function._invoke_gateway_agent("t-99", "API Error", "critical", "Throttling on EC2")
 

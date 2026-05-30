@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 
 import boto3
+from pydantic_settings import BaseSettings
 
-_AGENT_RUNTIME_ARN = os.environ.get("AGENT_RUNTIME_ARN", "")
-_DISPATCHER_PROMPT_ARN = os.environ.get("DISPATCHER_PROMPT_ARN", "")
+
+class _Settings(BaseSettings):
+    agent_runtime_arn: str
+    dispatcher_prompt_arn: str
+
+
+_settings = _Settings()  # type: ignore[call-arg]
 _AGENT_QUALIFIER = "DEFAULT"
 
 logger = logging.getLogger()
@@ -23,12 +28,11 @@ _prompt_template_cache: str | None = None
 def _get_prompt_template() -> str:
     global _prompt_template_cache
     if _prompt_template_cache is None:
-        if not _DISPATCHER_PROMPT_ARN:
-            raise RuntimeError("DISPATCHER_PROMPT_ARN must be set")
-        resp = _bedrock_agent.get_prompt(promptIdentifier=_DISPATCHER_PROMPT_ARN)
+        resp = _bedrock_agent.get_prompt(promptIdentifier=_settings.dispatcher_prompt_arn)
         variants = resp.get("variants", [])
         if not variants:
-            raise RuntimeError(f"No variants found for prompt ARN: {_DISPATCHER_PROMPT_ARN}")
+            arn = _settings.dispatcher_prompt_arn
+            raise RuntimeError(f"No variants found for prompt ARN: {arn}")
         _prompt_template_cache = variants[0]["templateConfiguration"]["text"]["text"]
         logger.info("Loaded dispatcher prompt template from Bedrock Prompt Management")
     return _prompt_template_cache
@@ -43,11 +47,7 @@ def _expand_template(template: str, **variables: str) -> str:
 
 
 def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description: str) -> None:
-    """Send a diagnostic request to the Pipeline Orchestrator (Triage→Diagnosis→Resolution)."""
-    if not _AGENT_RUNTIME_ARN:
-        logger.warning("AGENT_RUNTIME_ARN not set — skipping orchestrator invocation")
-        return
-
+    """Send a diagnostic request to the Pipeline Orchestrator."""
     template = _get_prompt_template()
     message = _expand_template(
         template,
@@ -59,7 +59,7 @@ def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description
     payload = json.dumps({"prompt": message, "user_id": "ticket-dispatcher"}).encode()
 
     resp = _agentcore.invoke_agent_runtime(
-        agentRuntimeArn=_AGENT_RUNTIME_ARN,
+        agentRuntimeArn=_settings.agent_runtime_arn,
         qualifier=_AGENT_QUALIFIER,
         payload=payload,
         runtimeSessionId=ticket_id,

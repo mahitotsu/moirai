@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import urllib.request
 from functools import lru_cache
 
 import boto3
+from pydantic_settings import BaseSettings
 
-_TICKET_SERVICE_URL = os.environ.get("TICKET_SERVICE_URL", "").rstrip("/")
-_API_KEY_SECRET_NAME = os.environ.get("API_KEY_SECRET_NAME", "")
+
+class _Settings(BaseSettings):
+    ticket_service_url: str
+    api_key_secret_name: str
+
+
+_settings = _Settings()  # type: ignore[call-arg]
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -20,7 +25,7 @@ _sm = boto3.client("secretsmanager")
 @lru_cache(maxsize=1)
 def _get_api_key() -> str:
     """Fetch the Ticket Service API key from Secrets Manager (cached per container)."""
-    return _sm.get_secret_value(SecretId=_API_KEY_SECRET_NAME)["SecretString"]
+    return _sm.get_secret_value(SecretId=_settings.api_key_secret_name)["SecretString"]
 
 
 def _create_ticket(alarm_name: str, reason: str) -> str:
@@ -39,7 +44,7 @@ def _create_ticket(alarm_name: str, reason: str) -> str:
     ).encode()
 
     req = urllib.request.Request(
-        f"{_TICKET_SERVICE_URL}/tickets",
+        f"{_settings.ticket_service_url.rstrip('/')}/tickets",
         data=payload,
         headers={
             "Content-Type": "application/json",

@@ -26,8 +26,7 @@ def test_bridge_lambda_config(template: Template) -> None:
         {
             "FunctionName": "agora-bridge",
             "Architectures": ["arm64"],
-            "Handler": "lambda_function.handler",
-            "Runtime": "python3.12",
+            "PackageType": "Image",
         },
     )
 
@@ -54,8 +53,7 @@ def test_fake_api_server_config(template: Template) -> None:
         {
             "FunctionName": "agora-fake-api-server",
             "Architectures": ["arm64"],
-            "Handler": "lambda_function.handler",
-            "Runtime": "python3.12",
+            "PackageType": "Image",
         },
     )
 

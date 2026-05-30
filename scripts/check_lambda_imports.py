@@ -41,7 +41,13 @@ LAMBDAS: list[tuple[Path, dict[str, str]]] = [
             "VECTOR_INDEX_NAME": "dummy",
         },
     ),
-    (SERVICES / "ticket-dispatcher", {}),
+    (
+        SERVICES / "ticket-dispatcher",
+        {
+            "AGENT_RUNTIME_ARN": "arn:aws:bedrock-agentcore:::runtime/dummy",
+            "DISPATCHER_PROMPT_ARN": "arn:aws:bedrock:us-east-1::prompt/dummy",
+        },
+    ),
     (SERVICES / "bridge", {"TICKET_SERVICE_URL": "http://dummy", "API_KEY_SECRET_NAME": "dummy"}),
     (SERVICES / "fake-api-server", {}),
 ]

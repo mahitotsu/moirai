@@ -4,6 +4,7 @@ from pathlib import Path
 
 import aws_cdk as cdk
 import aws_cdk.aws_cloudwatch as cloudwatch
+import aws_cdk.aws_ecr_assets as ecr_assets
 import aws_cdk.aws_events as events
 import aws_cdk.aws_fis as fis
 import aws_cdk.aws_iam as iam
@@ -13,8 +14,6 @@ import aws_cdk.aws_scheduler as scheduler
 import aws_cdk.aws_sqs as sqs
 import aws_cdk.aws_ssm as ssm
 from constructs import Construct
-
-from stacks.bundlers import LocalPipBundler as _LocalPipBundler
 
 _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
 
@@ -72,7 +71,7 @@ class FaultInjectionStack(cdk.Stack):
             )
         )
 
-        self.fake_api_fn = lambda_.Function(
+        self.fake_api_fn = lambda_.DockerImageFunction(
             self,
             "FakeApiServerFn",
             function_name="agora-fake-api-server",
@@ -80,20 +79,10 @@ class FaultInjectionStack(cdk.Stack):
                 "Simulates a backend API health-check by calling EC2 DescribeInstances. "
                 "Scheduled every minute. FIS ThrottlingException injection target."
             ),
-            code=lambda_.Code.from_asset(
+            code=lambda_.DockerImageCode.from_image_asset(
                 str(_SERVICES_DIR / "fake-api-server"),
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash", "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp *.py /asset-output/",
-                    ],
-                    local=_LocalPipBundler(_SERVICES_DIR / "fake-api-server"),
-                ),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
-            handler="lambda_function.handler",
-            runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_MB,
             timeout=_TIMEOUT_STANDARD,
@@ -251,25 +240,14 @@ class FaultInjectionStack(cdk.Stack):
             )
         )
 
-        _bridge_fn = lambda_.Function(
+        _bridge_fn = lambda_.DockerImageFunction(
             self,
             "BridgeFn",
             function_name="agora-bridge",
-            code=lambda_.Code.from_asset(
+            code=lambda_.DockerImageCode.from_image_asset(
                 str(_SERVICES_DIR / "bridge"),
-                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash", "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp *.py /asset-output/",
-                    ],
-                    local=_LocalPipBundler(_SERVICES_DIR / "bridge"),
-                ),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
-            handler="lambda_function.handler",
-            runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_MB,
             timeout=_TIMEOUT_BRIDGE,

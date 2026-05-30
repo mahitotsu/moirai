@@ -27,8 +27,6 @@ from aws_cdk.aws_s3_deployment import BucketDeployment, Source
 from constructs import Construct
 from pydantic_settings import BaseSettings
 
-from stacks.bundlers import LocalPipBundler as _LocalPipBundler
-
 
 @jsii.implements(cdk.ILocalBundling)
 class _LocalNodeBundler:
@@ -939,25 +937,14 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        self.ticket_dispatcher_fn = lambda_.Function(
+        self.ticket_dispatcher_fn = lambda_.DockerImageFunction(
             self,
             "TicketDispatcherFn",
             function_name="agora-ticket-dispatcher",
-            code=lambda_.Code.from_asset(
+            code=lambda_.DockerImageCode.from_image_asset(
                 str(_SERVICES_DIR / "ticket-dispatcher"),
-                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash", "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp *.py /asset-output/",
-                    ],
-                    local=_LocalPipBundler(_SERVICES_DIR / "ticket-dispatcher"),
-                ),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
-            handler="lambda_function.handler",
-            runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_WORKER_MB,
             timeout=_TIMEOUT_LONG,
@@ -1045,26 +1032,14 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        self.knowledge_consumer_fn = lambda_.Function(
+        self.knowledge_consumer_fn = lambda_.DockerImageFunction(
             self,
             "KnowledgeConsumerFn",
             function_name="agora-knowledge-consumer",
-            code=lambda_.Code.from_asset(
+            code=lambda_.DockerImageCode.from_image_asset(
                 str(_SERVICES_DIR / "knowledge-consumer"),
-                exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp *.py /asset-output/",
-                    ],
-                    local=_LocalPipBundler(_SERVICES_DIR / "knowledge-consumer"),
-                ),
+                platform=ecr_assets.Platform.LINUX_ARM64,
             ),
-            handler="lambda_function.handler",
-            runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_WORKER_MB,
             timeout=_TIMEOUT_LONG,
@@ -1456,25 +1431,11 @@ class AgoraStack(cdk.Stack):
             )
         )
 
-        registry_fn = lambda_.Function(
+        registry_fn = lambda_.DockerImageFunction(
             self,
             "RegistryCatalogFn",
             function_name="agora-registry-catalog",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="registry_catalog_handler.handler",
-            code=lambda_.Code.from_asset(
-                str(_LAMBDA_DIR),
-                bundling=cdk.BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    local=_LocalPipBundler(_LAMBDA_DIR),
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output --quiet"
-                        " && cp -au . /asset-output",
-                    ],
-                ),
-            ),
+            code=lambda_.DockerImageCode.from_image_asset(str(_LAMBDA_DIR)),
             timeout=cdk.Duration.minutes(10),
             role=registry_role,
         )
