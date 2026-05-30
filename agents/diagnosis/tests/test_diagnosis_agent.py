@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("MODEL_ID", "us.anthropic.claude-sonnet-4-6")
 os.environ.setdefault("SYSTEM_PROMPT_ARN", "arn:aws:bedrock:us-east-1:123456789012:prompt/dummy")
+os.environ.setdefault(
+    "JUDGMENT_PROMPT_ARN", "arn:aws:bedrock:us-east-1:123456789012:prompt/dummy-judgment"
+)
 
 # registry モジュールは Registry API が必要なため、テストではスタブ化する
 _registry_mock = MagicMock()
@@ -30,4 +33,4 @@ def test_settings_load_defaults() -> None:
 
 
 def test_system_prompt_is_non_empty() -> None:
-    assert len(agent._SYSTEM_PROMPT) > 0
+    assert len(agent._DIAGNOSIS_PROMPT) > 0

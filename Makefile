@@ -25,13 +25,12 @@ _MONITORING_STACK := FaultInjectionStack
 
 test:
 	@failed=0; \
-	for svcdir in services/*/; do \
+	for svcdir in services/*/ mcp-servers/*/ agents/*/; do \
 	  [ -d "$$svcdir" ] || continue; \
 	  find "$$svcdir" -name "test_*.py" | grep -q . || continue; \
 	  pkg=$$(basename "$$svcdir"); \
 	  uv run --package "$$pkg" pytest "$$svcdir" -v --tb=short 2>/dev/null || failed=1; \
 	done; \
-	uv run pytest mcp-servers/ agents/ -v --tb=short 2>/dev/null || failed=1; \
 	uv run --package agora-infrastructure pytest infrastructure/tests/ -v --tb=short 2>/dev/null || failed=1; \
 	[ "$$failed" -eq 0 ] && touch .test-passed || echo "Tests FAILED"
 

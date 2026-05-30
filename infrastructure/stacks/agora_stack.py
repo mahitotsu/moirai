@@ -1488,18 +1488,11 @@ class AgoraStack(cdk.Stack):
                 parameters=_invocation_logging_config,
                 physical_resource_id=cr.PhysicalResourceId.of("BedrockModelInvocationLogging"),
             ),
-            on_delete=cr.AwsSdkCall(
-                service="Bedrock",
-                action="putModelInvocationLoggingConfiguration",
-                # スタック削除時はロギングを無効化（ロールと Log Group も削除されるため必須）
-                parameters={
-                    "loggingConfig": {
-                        "textDataDeliveryEnabled": False,
-                        "imageDataDeliveryEnabled": False,
-                        "embeddingDataDeliveryEnabled": False,
-                    }
-                },
-            ),
+            # on_delete は省略: Bedrock は「無効化」専用 API を持たず、
+            # cloudWatchConfig を省略した putModelInvocationLoggingConfiguration は
+            # "At least one logging config must be specified" で拒否される。
+            # スタック削除時はロールとロググループが同時に削除されるため
+            # Bedrock は書き込み先を失い、実質的にログは停止する。
             policy=cr.AwsCustomResourcePolicy.from_statements([
                 iam.PolicyStatement(
                     actions=[

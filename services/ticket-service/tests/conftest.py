@@ -17,6 +17,16 @@ def dynamodb_client():
 
 @pytest.fixture(scope="session", autouse=True)
 def test_table(dynamodb_client):
+    # 前回実行の残留テーブルを確実に削除してからクリーンな状態で作成する
+    # (delete_table は非同期のため前回の session 終了時点では DELETING 中の場合がある)
+    try:
+        dynamodb_client.delete_table(TableName=TABLE_NAME)
+        _w = dynamodb_client.get_waiter("table_not_exists")
+        _w.config.delay = 2
+        _w.wait(TableName=TABLE_NAME)
+    except dynamodb_client.exceptions.ResourceNotFoundException:
+        pass  # テーブルが存在しない場合はそのまま続行
+
     dynamodb_client.create_table(
         TableName=TABLE_NAME,
         KeySchema=[{"AttributeName": "ticket_id", "KeyType": "HASH"}],
