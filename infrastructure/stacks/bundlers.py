@@ -30,7 +30,14 @@ class LocalPipBundler:
         req = self._source / "requirements.txt"
         if req.exists() and req.read_text().strip():
             subprocess.check_call(
-                ["uv", "pip", "install", "-r", str(req), "--target", output_dir, "--quiet"]
+                [
+                    "uv", "pip", "install", "-r", str(req),
+                    "--target", output_dir,
+                    "--quiet",
+                    "--python-platform", "aarch64-manylinux_2_17",
+                    "--python-version", "3.12",
+                    "--only-binary", ":all:",
+                ]
             )
         for item in self._source.iterdir():
             if item.is_file() and item.name not in ("requirements.txt",):

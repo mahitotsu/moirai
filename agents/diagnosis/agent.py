@@ -106,7 +106,7 @@ def _make_diagnosis_agent(skill: object, mcp_url: str) -> Agent:
         ),
         system_prompt=_DIAGNOSIS_PROMPT,
         tools=[mcp],
-        plugins=[AgentSkills(skills=[skill])],  # type: ignore[arg-type]
+        plugins=[AgentSkills(skills=[skill])],  # type: ignore[list-item]
         structured_output_model=DiagnosisResult,
     )
 
@@ -127,7 +127,7 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         structured_output_model=_RunbookSelection,
     )
     judgment_result = judgment_agent(message)
-    selection: _RunbookSelection = judgment_result.structured_output
+    selection: _RunbookSelection = judgment_result.structured_output  # type: ignore[assignment]
 
     # 選択されたランブックの本文を Registry から取得
     skills = [
@@ -145,12 +145,16 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
     graph = builder.build()
     graph_result = graph(message)
 
-    results: list[DiagnosisResult] = [
-        graph_result.results[nid].result.structured_output
-        for nid in node_ids
-        if nid in graph_result.results
-        and not isinstance(graph_result.results[nid].result, Exception)
-    ]
+    results: list[DiagnosisResult] = []
+    for nid in node_ids:
+        if nid not in graph_result.results:
+            continue
+        node_result = graph_result.results[nid].result
+        if isinstance(node_result, Exception):
+            continue
+        output = node_result.structured_output  # type: ignore[union-attr]
+        if isinstance(output, DiagnosisResult):
+            results.append(output)
 
     return {"response": json.dumps([r.model_dump() for r in results])}
 
