@@ -59,22 +59,6 @@ export async function getTicket(id: string): Promise<Ticket> {
   return resp.json() as Promise<Ticket>;
 }
 
-export type AgentPrompts = {
-  orchestrator: string;
-  chat: string;
-  triage: string;
-  diagnosis: string;
-  resolution: string;
-};
-
-export async function fetchAgentPrompts(): Promise<AgentPrompts> {
-  // Production: CloudFront routes /api/prompts → ticket-service Lambda.
-  // Local dev: VITE_TICKET_SERVICE_URL points directly to the Lambda Function URL.
-  const url = TICKET_URL ? `${TICKET_URL}/prompts` : "/api/prompts";
-  const resp = await fetchWithRetry(url, { headers: ticketHeaders() });
-  if (!resp.ok) throw new Error(`Prompts endpoint error: ${resp.status}`);
-  return resp.json() as Promise<AgentPrompts>;
-}
 
 export async function sendChat(
   message: string,

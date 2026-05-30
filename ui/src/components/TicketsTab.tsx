@@ -230,7 +230,7 @@ export default function TicketsTab() {
       );
       setTickets(sorted);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tickets");
+      setError(err instanceof Error ? err.message : "チケットの読み込みに失敗しました");
     } finally {
       setLoading(false);
     }
@@ -249,7 +249,7 @@ export default function TicketsTab() {
       <div className="flex items-center gap-2">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder="ステータス" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">すべてのステータス</SelectItem>
@@ -263,7 +263,7 @@ export default function TicketsTab() {
 
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Category" />
+            <SelectValue placeholder="カテゴリ" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">すべてのカテゴリ</SelectItem>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -672,11 +673,12 @@ class AgoraStack(cdk.Stack):
                 ],
                 tags={"project": "agora"},
             )
+            content_hash = hashlib.sha256(text.encode()).hexdigest()[:8]
             version = bedrock.CfnPromptVersion(
                 self,
                 logical_id + "Version",
                 prompt_arn=prompt.attr_arn,
-                description=description,
+                description=f"{description} [{content_hash}]",
             )
             return prompt, version
 

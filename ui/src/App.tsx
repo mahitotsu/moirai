@@ -1,9 +1,8 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { MessageSquare, Ticket, BookOpen, Layers } from "lucide-react";
+import { MessageSquare, Ticket, BookOpen } from "lucide-react";
 import ChatTab from "@/components/ChatTab";
 import TicketsTab from "@/components/TicketsTab";
 import KnowledgeTab from "@/components/KnowledgeTab";
-import SystemTab from "@/components/SystemTab";
 
 export default function App() {
   return (
@@ -44,13 +43,6 @@ export default function App() {
               <BookOpen className="h-4 w-4" />
               Knowledge
             </TabsTrigger>
-            <TabsTrigger
-              value="system"
-              className="flex items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 pb-2 pt-1.5 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              <Layers className="h-4 w-4" />
-              System
-            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -62,9 +54,6 @@ export default function App() {
         </TabsContent>
         <TabsContent value="knowledge" className="mt-0 flex-1 overflow-auto">
           <KnowledgeTab />
-        </TabsContent>
-        <TabsContent value="system" className="mt-0 flex-1 overflow-hidden">
-          <SystemTab />
         </TabsContent>
       </Tabs>
     </div>

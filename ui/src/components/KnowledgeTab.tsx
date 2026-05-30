@@ -113,7 +113,7 @@ export default function KnowledgeTab() {
       });
       setTickets(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load knowledge");
+      setError(err instanceof Error ? err.message : "ナレッジの読み込みに失敗しました");
     } finally {
       setLoading(false);
     }
@@ -136,7 +136,7 @@ export default function KnowledgeTab() {
       <div className="flex items-center gap-2">
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="Category" />
+            <SelectValue placeholder="カテゴリ" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">すべてのカテゴリ</SelectItem>
