@@ -5,12 +5,13 @@ _SCHEDULE_NAME    := agora-fake-api-server-schedule
 _MONITORING_STACK := FaultInjectionStack
 
 # ─── コマンド一覧 ──────────────────────────────────────────────────────────────
-# make test                       — 全テスト
+# make test                       — 全テスト (変更なければ自動スキップ)
+# make test-force                 — 強制フルテスト実行 (スキップ無効)
 # make test-service s=ticket-service — サービス単体テスト
 # make lint                       — ruff + mypy
 # make build img=ticket-service   — ARM64 Dockerビルド (ローカル確認用)
 # make cdk-diff                   — CDK差分確認
-# make cdk-deploy                 — CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
+# make cdk-deploy                 — CDKデプロイ (テスト未通過なら中止・承認必要)
 # make gen-specs                  — OpenAPI spec JSONを再生成
 #
 # デモ制御:
@@ -29,11 +30,18 @@ _MONITORING_STACK := FaultInjectionStack
 #            make demo-inject         # FIS e2e 確認
 #   Stage 5: make demo-stop && make demo-clear  # 後片付け
 #
-.PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
+.PHONY: test test-force test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
+        check-lambda-imports _predeploy \
         demo-clear demo-seed demo-pipeline-test demo-start demo-inject demo-stop qemu-setup
 
 test:
-	@failed=0; \
+	@if bash scripts/test_stale.sh; then \
+	  echo "==> Running tests ..."; \
+	else \
+	  echo "==> Tests up to date — skipping. (make test-force to re-run)"; \
+	  exit 0; \
+	fi; \
+	failed=0; \
 	for svcdir in services/*/ mcp-servers/*/ agents/*/; do \
 	  [ -d "$$svcdir" ] || continue; \
 	  find "$$svcdir" -name "test_*.py" | grep -q . || continue; \
@@ -41,10 +49,26 @@ test:
 	  uv run --package "$$pkg" pytest "$$svcdir" -v --tb=short 2>/dev/null || failed=1; \
 	done; \
 	uv run --package agora-infrastructure pytest infrastructure/tests/ -v --tb=short 2>/dev/null || failed=1; \
-	[ "$$failed" -eq 0 ] && touch .test-passed || echo "Tests FAILED"
+	uv run python scripts/check_lambda_imports.py || failed=1; \
+	if [ "$$failed" -eq 0 ]; then bash scripts/stamp_test.sh; else echo "Tests FAILED"; fi
+
+test-force:
+	@rm -f .test-passed
+	@$(MAKE) test
 
 test-service:
 	uv run --package $(s) pytest services/$(s)/ -v --tb=short && touch .test-passed
+
+check-lambda-imports:
+	@echo "==> Checking zip Lambda imports in isolated environment ..."
+	@uv run python scripts/check_lambda_imports.py
+
+_predeploy:
+	@if bash scripts/test_stale.sh; then \
+	  echo "ERROR: テストが未実行または変更後に未実行です。先に 'make test' を実行してください。"; \
+	  exit 1; \
+	fi
+	@echo "==> Tests are current. Proceeding with deploy."
 
 lint:
 	uv run ruff check services/ mcp-servers/ agents/ infrastructure/ --exclude infrastructure/cdk.out
@@ -82,7 +106,7 @@ cdk-diff:
 cdk-synth:
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk synth
 
-cdk-deploy: qemu-setup
+cdk-deploy: _predeploy qemu-setup
 	cd infrastructure && AWS_DEFAULT_REGION=$(_REGION) cdk deploy --all --require-approval never
 
 gen-specs:

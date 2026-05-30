@@ -37,6 +37,7 @@ uv add <package> --package <name>   # 特定パッケージに依存追加
 make test                           # 全テスト実行
 make test-service s=ticket-service  # サービス単体テスト
 make lint                           # ruff + mypy
+make check-lambda-imports           # zip Lambda の依存を本番相当環境でインポート検証 (make test に含まれる)
 make build img=ticket-service       # ARM64 Dockerビルド (ローカル確認用)
 make cdk-diff                       # CDK差分確認 (安全)
 make cdk-deploy                     # CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
@@ -127,10 +128,19 @@ agents/{name}/
 infrastructure/
 ├── app.py
 └── stacks/
+    ├── bundlers.py       # 共有バンドラー (LocalPipBundler)
     ├── data_stack.py     # DynamoDBテーブル
     ├── compute_stack.py  # ECR + AgentCore Runtime登録
     └── network_stack.py  # VPC（必要に応じて）
 ```
+
+### zip Lambda (from_asset) の必須ルール
+
+- **`bundling=BundlingOptions(local=LocalPipBundler(...))` は全 zip Lambda に必須**  
+  bundling を省略すると requirements.txt がインストールされず、本番でのみ `ModuleNotFoundError` が発生する
+- uv ワークスペースは `.venv` を全パッケージで共有するため、`make test` だけでは依存宣言漏れを検出できない  
+  → **`make check-lambda-imports`** で本番相当の隔離環境での import を検証すること
+- 新しいサードパーティ import を追加したら必ず `pyproject.toml` の `dependencies` にも追記する
 
 ## コンポーネント新規作成・デプロイ時のルール
 

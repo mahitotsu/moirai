@@ -21,13 +21,12 @@
    エラーがあれば修正してから次へ。
 
 3. **Python テスト**
-   `.test-passed` のタイムスタンプと、テスト対象ファイルの最終更新時刻を比較してスキップ可否を判断する。
    ```bash
-   # .test-passed より新しいコードファイルがあるか確認 (CDK infrastructure を含む)
-   find services/ mcp-servers/ agents/ infrastructure/ -newer .test-passed \( -name "*.py" \) 2>/dev/null | grep -v cdk.out | head -5
+   make test
    ```
-   - 出力が空（変更なし）→ **テストスキップ**。最終実行日時をユーザーに伝えて次へ進む
-   - 出力あり（変更あり）または `.test-passed` が存在しない → `make test` を実行。失敗があれば修正してから次へ
+   `make test` は `scripts/test_stale.sh` で変更有無を自動判定し、最後のテスト成功以降に変更がなければスキップする。
+   - スキップ → 最終テスト時刻 (`.test-passed` の mtime) をユーザーに伝えて次へ進む
+   - 実行 → 失敗があれば修正してから次へ
 
 4. **UI チェック** (`ui/` に変更がある場合のみ)
    ```bash

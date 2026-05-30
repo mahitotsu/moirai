@@ -14,6 +14,8 @@ import aws_cdk.aws_sqs as sqs
 import aws_cdk.aws_ssm as ssm
 from constructs import Construct
 
+from stacks.bundlers import LocalPipBundler as _LocalPipBundler
+
 _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
 
 # ── Lambda ────────────────────────────────────────────────────────────────
@@ -78,7 +80,18 @@ class FaultInjectionStack(cdk.Stack):
                 "Simulates a backend API health-check by calling EC2 DescribeInstances. "
                 "Scheduled every minute. FIS ThrottlingException injection target."
             ),
-            code=lambda_.Code.from_asset(str(_SERVICES_DIR / "fake-api-server")),
+            code=lambda_.Code.from_asset(
+                str(_SERVICES_DIR / "fake-api-server"),
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output --quiet"
+                        " && cp *.py /asset-output/",
+                    ],
+                    local=_LocalPipBundler(_SERVICES_DIR / "fake-api-server"),
+                ),
+            ),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
             architecture=lambda_.Architecture.ARM_64,
@@ -245,6 +258,15 @@ class FaultInjectionStack(cdk.Stack):
             code=lambda_.Code.from_asset(
                 str(_SERVICES_DIR / "bridge"),
                 exclude=["**/__pycache__/**", "tests/**", "pyproject.toml"],
+                bundling=cdk.BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output --quiet"
+                        " && cp *.py /asset-output/",
+                    ],
+                    local=_LocalPipBundler(_SERVICES_DIR / "bridge"),
+                ),
             ),
             handler="lambda_function.handler",
             runtime=lambda_.Runtime.PYTHON_3_12,
