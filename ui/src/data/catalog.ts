@@ -12,7 +12,7 @@ export type AgentDef = {
   id: string;
   name: string;
   /** AgentCore Runtime protocol */
-  protocol: "AG-UI" | "A2A";
+  protocol: "AG-UI" | "A2A" | "HTTP";
   model: string;
   /** Why this model was chosen for this agent */
   modelNote: string;
@@ -35,28 +35,59 @@ export type McpDef = {
 
 export const AGENTS: AgentDef[] = [
   {
-    id: "gateway",
-    name: "Gateway Agent",
-    protocol: "AG-UI",
+    id: "orchestrator",
+    name: "Pipeline Orchestrator",
+    protocol: "HTTP",
     model: "claude-sonnet-4-6",
-    modelNote: "Sonnet — Guardrails との統合・複数サブエージェントのオーケストレーションに高い推論力が必要",
+    modelNote: "Sonnet — Triage → Diagnosis → Resolution を順に呼び出す内部オーケストレーター",
     description:
-      "ユーザー向けオーケストレーター。Chat UI からの横断クエリ受付と、ticket-dispatcher からの自動診断依頼をどちらも処理する。Bedrock Guardrails で禁止操作をブロック。",
+      "ticket-dispatcher からの自動インシデントレポートを受け取り、Triage → Diagnosis → Resolution パイプラインをバックグラウンドで非同期実行する。Guardrails 不要（内部システム専用）。",
     tools: [
       {
-        name: "run_triage",
+        name: "invoke_triage",
         description:
           "Triage Agent に A2A で委譲。インシデントの重大度・カテゴリ・検索キーワードを JSON で返す。",
       },
       {
-        name: "run_diagnosis",
+        name: "invoke_diagnosis",
         description:
           "Diagnosis Agent に A2A で委譲。コミュニティ知識と過去チケットを並列検索して診断結果を返す。",
       },
       {
-        name: "run_resolution",
+        name: "invoke_resolution",
         description:
           "Resolution Agent に A2A で委譲。解決計画を生成し、既存チケットを更新（または新規作成）する。",
+      },
+    ],
+  },
+  {
+    id: "chat",
+    name: "Chat Agent",
+    protocol: "AG-UI",
+    model: "claude-sonnet-4-6",
+    modelNote: "Sonnet — Guardrails との統合・MCP ツール群・横断クエリに高い推論力が必要",
+    description:
+      "Chat UI からのユーザーリクエストに応答するインタラクティブエージェント。チケット・ナレッジのクロスクエリ、手動インシデント診断（Triage→Diagnosis→Resolution）をサポート。Bedrock Guardrails で禁止操作をブロック。",
+    tools: [
+      {
+        name: "mcp (Ticket Service)",
+        description:
+          "AgentCore Gateway 経由で Ticket Service の MCP ツールを呼び出す。チケット検索・取得・作成・更新。",
+      },
+      {
+        name: "invoke_triage",
+        description:
+          "手動診断リクエスト時に Triage Agent に A2A で委譲。",
+      },
+      {
+        name: "invoke_diagnosis",
+        description:
+          "手動診断リクエスト時に Diagnosis Agent に A2A で委譲。",
+      },
+      {
+        name: "invoke_resolution",
+        description:
+          "手動診断リクエスト時に Resolution Agent に A2A で委譲。",
       },
     ],
   },

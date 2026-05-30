@@ -114,7 +114,8 @@ def _fetch_prompt_text(arn: str) -> str:
 @app.get("/prompts")
 def get_prompts() -> dict[str, str]:
     return {
-        "gateway": _fetch_prompt_text(settings.gateway_prompt_arn),
+        "orchestrator": _fetch_prompt_text(settings.orchestrator_prompt_arn),
+        "chat": _fetch_prompt_text(settings.chat_prompt_arn),
         "triage": _fetch_prompt_text(settings.triage_prompt_arn),
         "diagnosis": _fetch_prompt_text(settings.diagnosis_prompt_arn),
         "resolution": _fetch_prompt_text(settings.resolution_prompt_arn),

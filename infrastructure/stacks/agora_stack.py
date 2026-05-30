@@ -28,6 +28,42 @@ from pydantic_settings import BaseSettings
 
 
 @jsii.implements(cdk.ILocalBundling)
+class _LocalNodeBundler:
+    """Docker なしで React UI をバンドルするローカルバンドラー。
+
+    優先順位:
+    1. npm が利用可能 → npm ci && npm run build をローカル実行
+    2. ui/dist/ が存在 → 既存のビルド成果物をコピー
+    3. それ以外      → 最小スタブを生成（テスト / CDK synth 専用）
+
+    try_bundle が True を返すため Docker フォールバックは不要。
+    """
+
+    def __init__(self, ui_dir: str) -> None:
+        self._ui = Path(ui_dir)
+
+    def try_bundle(self, output_dir: str, options: cdk.BundlingOptions) -> bool:
+        dist = self._ui / "dist"
+
+        if shutil.which("npm"):
+            subprocess.check_call(["npm", "ci"], cwd=str(self._ui))
+            subprocess.check_call(["npm", "run", "build"], cwd=str(self._ui))
+
+        if dist.exists():
+            for item in dist.iterdir():
+                dst = Path(output_dir) / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dst)
+            return True
+
+        # テスト環境向け最小スタブ — CloudFormation テンプレート合成のみ通す
+        Path(output_dir, "index.html").write_text("<html><body>Agora UI</body></html>")
+        return True
+
+
+@jsii.implements(cdk.ILocalBundling)
 class _LocalPipBundler:
     """Docker なしで pip install + ソースコピーを行うローカルバンドラー。
     boto3 のような純粋 Python パッケージに使用する。
@@ -551,8 +587,8 @@ class AgoraStack(cdk.Stack):
         self.guardrail = bedrock.CfnGuardrail(
             self,
             "GatewayGuardrail",
-            name="agora-gateway-guardrail",
-            description="Gateway Agent 用 Guardrail — FIS 操作と実システム変更をブロック",
+            name="agora-chat-guardrail",
+            description="Chat Agent 用 Guardrail — FIS 操作と実システム変更をブロック",
             blocked_input_messaging=(
                 "申し訳ありませんが、その操作はサポートされていません。"
                 "Agora はシステム変更の実行や FIS 実験の操作は行いません。"
@@ -644,11 +680,17 @@ class AgoraStack(cdk.Stack):
             )
             return prompt, version
 
-        self.gateway_prompt, self.gateway_prompt_version = _make_text_prompt(
-            "GatewaySystemPrompt",
-            "agora-gateway-system-prompt",
-            "Gateway Agent system prompt",
-            (_AGENTS_DIR / "gateway" / "system_prompt.md").read_text(),
+        self.orchestrator_prompt, self.orchestrator_prompt_version = _make_text_prompt(
+            "OrchestratorSystemPrompt",
+            "agora-orchestrator-system-prompt",
+            "Pipeline Orchestrator system prompt",
+            (_AGENTS_DIR / "orchestrator" / "system_prompt.md").read_text(),
+        )
+        self.chat_prompt, self.chat_prompt_version = _make_text_prompt(
+            "ChatSystemPrompt",
+            "agora-chat-system-prompt",
+            "Chat Agent system prompt",
+            (_AGENTS_DIR / "chat" / "system_prompt.md").read_text(),
         )
         self.triage_prompt, self.triage_prompt_version = _make_text_prompt(
             "TriageSystemPrompt",
@@ -715,27 +757,63 @@ class AgoraStack(cdk.Stack):
                 platform=ecr_assets.Platform.LINUX_ARM64,
             )
 
-        agent_images["gateway"] = ecr_assets.DockerImageAsset(
-            self,
-            "GatewayAgentImage",
-            directory=str(_AGENTS_DIR),
-            file="gateway/Dockerfile",
-            platform=ecr_assets.Platform.LINUX_ARM64,
-        )
+        for _img_name in ("orchestrator", "chat"):
+            agent_images[_img_name] = ecr_assets.DockerImageAsset(
+                self,
+                _img_name.title() + "AgentImage",
+                directory=str(_AGENTS_DIR),
+                file=f"{_img_name}/Dockerfile",
+                platform=ecr_assets.Platform.LINUX_ARM64,
+            )
 
         # ECR pull 権限は mcp_runtime_role / agent_runtime_role の add_to_policy("*") で確保済み
 
         # =====================================================================
-        # AGENTCORE GATEWAY AGENT RUNTIME — 先に作成して ARN を Lambda に注入
+        # PIPELINE ORCHESTRATOR RUNTIME — ticket-dispatcher から ARN を注入するため先に作成
+        # Guardrails 不要（内部システム呼び出し専用）。add_async_task でノンブロッキング実行。
         # =====================================================================
-        self.gateway_agent_runtime = agentcore.CfnRuntime(
+        self.orchestrator_agent_runtime = agentcore.CfnRuntime(
             self,
-            "AgoraGatewayRuntime",
-            agent_runtime_name="agora_gateway",
-            description="Gateway Agent — user-facing orchestrator (AG-UI/SSE)",
+            "AgoraOrchestratorRuntime",
+            agent_runtime_name="agora_orchestrator",
+            description="Pipeline Orchestrator — automated incident diagnostic pipeline (async)",
             agent_runtime_artifact=agentcore.CfnRuntime.AgentRuntimeArtifactProperty(
                 container_configuration=agentcore.CfnRuntime.ContainerConfigurationProperty(
-                    container_uri=agent_images["gateway"].image_uri,
+                    container_uri=agent_images["orchestrator"].image_uri,
+                ),
+            ),
+            role_arn=self.agent_runtime_role.role_arn,
+            network_configuration=agentcore.CfnRuntime.NetworkConfigurationProperty(
+                network_mode="PUBLIC",
+            ),
+            protocol_configuration="HTTP",
+            environment_variables={
+                "MODEL_ID": _MODEL_SONNET,
+                "SYSTEM_PROMPT_ARN": self.orchestrator_prompt_version.attr_arn,
+                "AGENT_OBSERVABILITY_ENABLED": "true",
+                "OTEL_SERVICE_NAME": "agora-orchestrator",
+            },
+            tags={"capability": "pipeline-orchestrator", "project": "agora"},
+        )
+        agentcore.CfnRuntimeEndpoint(
+            self,
+            "AgoraOrchestratorEndpoint",
+            agent_runtime_id=self.orchestrator_agent_runtime.attr_agent_runtime_id,
+            name="agora_orchestrator_ep",
+            description="Default endpoint for agora_orchestrator",
+        )
+
+        # =====================================================================
+        # CHAT AGENT RUNTIME — React UI (AG-UI/SSE) + Guardrails
+        # =====================================================================
+        self.chat_agent_runtime = agentcore.CfnRuntime(
+            self,
+            "AgoraChatRuntime",
+            agent_runtime_name="agora_chat",
+            description="Chat Agent — user-facing interactive assistant (AG-UI/SSE)",
+            agent_runtime_artifact=agentcore.CfnRuntime.AgentRuntimeArtifactProperty(
+                container_configuration=agentcore.CfnRuntime.ContainerConfigurationProperty(
+                    container_uri=agent_images["chat"].image_uri,
                 ),
             ),
             role_arn=self.agent_runtime_role.role_arn,
@@ -747,18 +825,18 @@ class AgoraStack(cdk.Stack):
                 "MODEL_ID": _MODEL_SONNET,
                 "GUARDRAIL_ID": self.guardrail.attr_guardrail_id,
                 "GUARDRAIL_VERSION": _GUARDRAIL_VERSION,
-                "SYSTEM_PROMPT_ARN": self.gateway_prompt_version.attr_arn,
+                "SYSTEM_PROMPT_ARN": self.chat_prompt_version.attr_arn,
                 "AGENT_OBSERVABILITY_ENABLED": "true",
-                "OTEL_SERVICE_NAME": "agora-gateway",
+                "OTEL_SERVICE_NAME": "agora-chat",
             },
-            tags={"capability": "gateway", "project": "agora"},
+            tags={"capability": "chat-agent", "project": "agora"},
         )
         agentcore.CfnRuntimeEndpoint(
             self,
-            "AgoraGatewayEndpoint",
-            agent_runtime_id=self.gateway_agent_runtime.attr_agent_runtime_id,
-            name="agora_gateway_ep",
-            description="Default endpoint for agora_gateway",
+            "AgoraChatEndpoint",
+            agent_runtime_id=self.chat_agent_runtime.attr_agent_runtime_id,
+            name="agora_chat_ep",
+            description="Default endpoint for agora_chat",
         )
 
         # =====================================================================
@@ -792,7 +870,8 @@ class AgoraStack(cdk.Stack):
                 **_common_env,
                 "TABLE_NAME": self.tickets_table.table_name,
                 "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
-                "GATEWAY_PROMPT_ARN": self.gateway_prompt_version.attr_arn,
+                "ORCHESTRATOR_PROMPT_ARN": self.orchestrator_prompt_version.attr_arn,
+                "CHAT_PROMPT_ARN": self.chat_prompt_version.attr_arn,
                 "TRIAGE_PROMPT_ARN": self.triage_prompt_version.attr_arn,
                 "DIAGNOSIS_PROMPT_ARN": self.diagnosis_prompt_version.attr_arn,
                 "RESOLUTION_PROMPT_ARN": self.resolution_prompt_version.attr_arn,
@@ -827,7 +906,7 @@ class AgoraStack(cdk.Stack):
             environment={
                 **_common_env,
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
-                "AGENT_RUNTIME_ARN": self.gateway_agent_runtime.attr_agent_runtime_arn,
+                "AGENT_RUNTIME_ARN": self.chat_agent_runtime.attr_agent_runtime_arn,
             },
         )
         self.chat_proxy_url = self.chat_proxy_fn.add_function_url(
@@ -901,7 +980,7 @@ class AgoraStack(cdk.Stack):
             ),
             environment={
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
-                "AGENT_RUNTIME_ARN": self.gateway_agent_runtime.attr_agent_runtime_arn,
+                "AGENT_RUNTIME_ARN": self.orchestrator_agent_runtime.attr_agent_runtime_arn,
                 "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt_version.attr_arn,
             },
         )
@@ -1150,6 +1229,7 @@ class AgoraStack(cdk.Stack):
                             "npm ci && npm run build && cp -r dist/. /asset-output/",
                         ],
                         environment={},
+                        local=_LocalNodeBundler(_UI_DIR),
                     ),
                 )
             ],
@@ -1289,7 +1369,8 @@ class AgoraStack(cdk.Stack):
 
         _agent_gw_policy = self.agent_runtime_role.node.try_find_child("DefaultPolicy")
         if _agent_gw_policy:
-            self.gateway_agent_runtime.node.add_dependency(_agent_gw_policy)
+            self.orchestrator_agent_runtime.node.add_dependency(_agent_gw_policy)
+            self.chat_agent_runtime.node.add_dependency(_agent_gw_policy)
 
         for _agent in _A2A_AGENTS:
             _role = _per_agent_roles[_agent["name"]]
@@ -1398,7 +1479,8 @@ class AgoraStack(cdk.Stack):
 
         for runtime in list(_mcp_runtimes.values()) + list(_a2a_runtimes.values()):
             registry_fn.node.add_dependency(runtime)
-        registry_fn.node.add_dependency(self.gateway_agent_runtime)
+        registry_fn.node.add_dependency(self.orchestrator_agent_runtime)
+        registry_fn.node.add_dependency(self.chat_agent_runtime)
 
         registry_provider = cr.Provider(
             self, "RegistryProvider", on_event_handler=registry_fn
@@ -1789,11 +1871,19 @@ class AgoraStack(cdk.Stack):
         cdk.CfnOutput(self, "GatewayUrl", value=self.agentcore_gateway.attr_gateway_url)
         cdk.CfnOutput(
             self,
-            "GatewayRuntimeArn",
-            value=self.gateway_agent_runtime.attr_agent_runtime_arn,
+            "OrchestratorRuntimeArn",
+            value=self.orchestrator_agent_runtime.attr_agent_runtime_arn,
+        )
+        cdk.CfnOutput(
+            self,
+            "ChatRuntimeArn",
+            value=self.chat_agent_runtime.attr_agent_runtime_arn,
         )
         cdk.CfnOutput(self, "GuardrailId", value=self.guardrail.attr_guardrail_id)
-        cdk.CfnOutput(self, "GatewayPromptArn", value=self.gateway_prompt_version.attr_arn)
+        cdk.CfnOutput(
+            self, "OrchestratorPromptArn", value=self.orchestrator_prompt_version.attr_arn
+        )
+        cdk.CfnOutput(self, "ChatPromptArn", value=self.chat_prompt_version.attr_arn)
         cdk.CfnOutput(self, "TriagePromptArn", value=self.triage_prompt_version.attr_arn)
         cdk.CfnOutput(self, "DiagnosisPromptArn", value=self.diagnosis_prompt_version.attr_arn)
         cdk.CfnOutput(

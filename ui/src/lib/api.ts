@@ -60,7 +60,8 @@ export async function getTicket(id: string): Promise<Ticket> {
 }
 
 export type AgentPrompts = {
-  gateway: string;
+  orchestrator: string;
+  chat: string;
   triage: string;
   diagnosis: string;
   resolution: string;

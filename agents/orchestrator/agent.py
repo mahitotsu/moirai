@@ -2,25 +2,22 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from typing import Any
 
 import boto3
 import registry
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
-from mcp.client.streamable_http import streamablehttp_client
 from pydantic_settings import BaseSettings
 from strands import Agent, tool
 from strands.models import BedrockModel, CacheConfig
-from strands.tools.mcp import MCPClient
 
 logger = logging.getLogger(__name__)
 
 
 class _Settings(BaseSettings):
     model_id: str = "us.anthropic.claude-sonnet-4-6"
-    guardrail_id: str = ""
-    guardrail_version: str = "DRAFT"
     system_prompt_arn: str = ""
 
 
@@ -34,12 +31,11 @@ app = BedrockAgentCoreApp()
 
 
 # ---------------------------------------------------------------------------
-# サブエージェント呼び出しヘルパー — Strandsツールとして呼び出される
+# サブエージェント呼び出しヘルパー
 # ---------------------------------------------------------------------------
 
 
 def _invoke_sub_agent(runtime_arn: str, message: str) -> str:
-    """InvokeAgentRuntime経由でHTTPプロトコルのサブエージェントを呼び出し、レスポンスを返す。"""
     payload = json.dumps({"message": message}).encode()
     resp = _agentcore.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
@@ -101,31 +97,37 @@ def invoke_resolution(diagnosis_result: str, ticket_id: str = "") -> str:
     return _invoke_sub_agent(arn, message)
 
 
+# ---------------------------------------------------------------------------
+# パイプライン実行 — バックグラウンドスレッドで動作
+# ---------------------------------------------------------------------------
+
+
+def _run_pipeline(task_id: int, prompt: str) -> None:
+    try:
+        agent = Agent(
+            model=BedrockModel(
+                model_id=_settings.model_id,
+                cache_config=CacheConfig(strategy="auto"),
+            ),
+            system_prompt=_SYSTEM_PROMPT,
+            tools=[invoke_triage, invoke_diagnosis, invoke_resolution],
+        )
+        agent(prompt)
+        logger.info("pipeline completed for task %s", task_id)
+    except Exception:
+        logger.exception("pipeline failed for task %s", task_id)
+    finally:
+        app.complete_async_task(task_id)
+
+
 @app.entrypoint
 def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
     prompt = payload.get("prompt", payload.get("message", ""))
-
-    mcp_url = registry.get_mcp_gateway_url()
-    mcp = MCPClient(
-        lambda: streamablehttp_client(mcp_url),
-        startup_timeout=60,
-    )
-
-    model_kwargs: dict = {
-        "model_id": _settings.model_id,
-        "cache_config": CacheConfig(strategy="auto"),
-    }
-    if _settings.guardrail_id:
-        model_kwargs["guardrail_id"] = _settings.guardrail_id
-        model_kwargs["guardrail_version"] = _settings.guardrail_version
-
-    agent = Agent(
-        model=BedrockModel(**model_kwargs),
-        system_prompt=_SYSTEM_PROMPT,
-        tools=[mcp, invoke_triage, invoke_diagnosis, invoke_resolution],
-    )
-    result = agent(prompt)
-    return {"response": str(result)}
+    # add_async_task でセッションを HealthyBusy に遷移させ、呼び出し元にはすぐ返す。
+    # パイプライン（Triage → Diagnosis → Resolution）はバックグラウンドスレッドで継続する。
+    task_id = app.add_async_task("pipeline")
+    threading.Thread(target=_run_pipeline, args=(task_id, prompt), daemon=True).start()
+    return {"response": "診断パイプラインを開始しました。処理はバックグラウンドで継続されます。"}
 
 
 if __name__ == "__main__":

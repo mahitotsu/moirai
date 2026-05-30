@@ -67,7 +67,7 @@ AgentCore は Bedrock の一機能群で、Runtime・Gateway・Registry・Observ
 │   CloudWatch → EventBridge → SQS → Bridge Lambda    │
 │   → Ticket Service: 自動起票                         │
 │   DynamoDB Streams → ticket-dispatcher Lambda        │
-│   → Gateway Agent: 診断依頼                          │
+│   → Pipeline Orchestrator: 診断依頼 (非同期)         │
 └──────────────────────┬──────────────────────────────┘
          ↕ AG-UI       │       ↕ REST API (直接)
     [React UI]         │    Tickets タブ / Knowledge タブ
@@ -75,7 +75,8 @@ AgentCore は Bedrock の一機能群で、Runtime・Gateway・Registry・Observ
                        ↕ AG-UI
 ┌──────────────────────▼──────────────────────────────┐
 │ エージェント群 (AgentCore Runtime)                   │
-│   Gateway Agent → Triage → Diagnosis → Resolution   │
+│   Pipeline Orchestrator → Triage → Diagnosis → Resolution │
+│   Chat Agent (AG-UI, Guardrails, MCP tools)          │
 └──────────────────────┬──────────────────────────────┘
                        ↕ AgentCore Registry 経由
 ┌──────────────────────▼──────────────────────────────┐
@@ -102,12 +103,12 @@ AgentCore は Bedrock の一機能群で、Runtime・Gateway・Registry・Observ
 
 | 種別 | コンポーネント |
 |---|---|
-| AgentCore Runtime 上のコンテナ・エージェント（4） | Gateway Agent / Triage Agent / Diagnosis Agent / Resolution Agent |
+| AgentCore Runtime 上のコンテナ・エージェント（5） | Pipeline Orchestrator / Chat Agent / Triage Agent / Diagnosis Agent / Resolution Agent |
 | AgentCore Runtime 上のコンテナ・MCP サーバー（3） | Stack Overflow MCP / GitHub Issues MCP / Infrastructure Inspector MCP |
 | Lambda 上の MCP サーバー（1） | CloudWatch MCP（stdio MCP を Lambda でラップして HTTP 化） |
 | 外部マネージドエンドポイント（1） | AWS Docs MCP（AWS Knowledge MCP Server） |
 
-本番用途ではこのフル構成を省略できる。最小構成として Gateway Agent + Diagnosis Agent の 2 体と、AgentCore Gateway 経由の Ticket Service だけでも基本的な自動診断パイプラインは成立する。
+本番用途ではこのフル構成を省略できる。最小構成として Pipeline Orchestrator + Diagnosis Agent の 2 体と、AgentCore Gateway 経由の Ticket Service だけでも基本的な自動診断パイプラインは成立する。
 
 ### Registry と Gateway の棲み分け
 
@@ -123,7 +124,7 @@ AgentCore は Bedrock の一機能群で、Runtime・Gateway・Registry・Observ
 | プロトコル | 策定 | 役割 |
 |---|---|---|
 | **MCP**（Model Context Protocol） | Anthropic | エージェントが外部ツール（API・データベース・検索など）を呼び出すための標準プロトコル。このデモでは Stack Overflow / GitHub Issues / CloudWatch 等の呼び出しに使用 |
-| **A2A**（Agent-to-Agent） | Google | エージェント同士が HTTP で直接呼び出し合うためのプロトコル。このデモでは Gateway → Triage → Diagnosis → Resolution の連鎖に使用 |
+| **A2A**（Agent-to-Agent） | Google | エージェント同士が HTTP で直接呼び出し合うためのプロトコル。このデモでは Pipeline Orchestrator → Triage → Diagnosis → Resolution の連鎖に使用 |
 | **AG-UI**（Agent-User Interaction） | CopilotKit | エージェントの応答を UI にストリーミングする、および ticket-dispatcher からの Agent 起動に使用する双方向 HTTP プロトコル |
 
 ### メインシナリオ：監視駆動の完全自動化
@@ -152,10 +153,10 @@ make demo-inject  # FIS 実験開始（障害注入・自動パイプライン�
   EventBridge Rule → SQS (agora-alarm-queue) → Bridge Lambda
   → Ticket Service: チケットを自動起票 (status: open)
   DynamoDB Streams → ticket-dispatcher Lambda
-  → Gateway Agent へ診断依頼を POST
+  → Pipeline Orchestrator へ診断依頼を POST (非同期・即時返却)
 
 [エージェントパイプライン]
-  Gateway Agent (AG-UI / HTTP POST)
+  Pipeline Orchestrator (HTTP POST, add_async_task で非同期実行)
     ↓ A2A
   Triage Agent
     severity=high、category=network と分類（ThrottlingException → network カテゴリ、スキル定義に基づく）
@@ -232,11 +233,11 @@ cdk deploy --all
 
 ```
 AWS コンソール → CloudWatch → Application Signals → Transaction Search
-Service name: agora-gateway-agent でフィルタ
+Service name: agora-orchestrator でフィルタ
 → 最新トレースを選択してウォーターフォールビューで確認
 
 見えるもの:
-  Bridge Lambda → ticket-dispatcher → Gateway → Triage → Diagnosis → Resolution
+  Bridge Lambda → ticket-dispatcher → Pipeline Orchestrator → Triage → Diagnosis → Resolution
   の全処理チェーンが単一トレースとして可視化される
   エージェントごとのレイテンシ・ツール呼び出し回数が計測される
 ```
@@ -268,7 +269,7 @@ AWS リソースのメトリクス・ログを収集・監視するサービス�
 #### AWS X-Ray
 分散トレーシングサービス。OTEL 計装されたサービスのスパンを受け取り、サービスマップとウォーターフォールビューで可視化する。
 
-**デモでの役割**: `AGENT_OBSERVABILITY_ENABLED=true` により `aws-opentelemetry-distro` が各エージェントコンテナで自動起動し、`X-Amzn-Trace-Id` ヘッダーで trace context を伝播させながらスパンを X-Ray に送信する。CloudWatch Application Signals の Transaction Search で Gateway → Triage → Diagnosis → Resolution の全処理チェーンと、各エージェントの Bedrock API 呼び出し・DynamoDB アクセス・MCP ツールコールが単一トレースとして表示される。
+**デモでの役割**: `AGENT_OBSERVABILITY_ENABLED=true` により `aws-opentelemetry-distro` が各エージェントコンテナで自動起動し、`X-Amzn-Trace-Id` ヘッダーで trace context を伝播させながらスパンを X-Ray に送信する。CloudWatch Application Signals の Transaction Search で Pipeline Orchestrator → Triage → Diagnosis → Resolution の全処理チェーンと、各エージェントの Bedrock API 呼び出し・DynamoDB アクセス・MCP ツールコールが単一トレースとして表示される。
 
 **選定理由**: botocore の auto-instrumentation が全 AWS SDK コール（Bedrock、DynamoDB、AgentCore invoke）を自動でスパン化するため、エージェントコードの変更不要。追加したのは CDK の環境変数 2 つのみ（`AGENT_OBSERVABILITY_ENABLED=true`、`OTEL_SERVICE_NAME`）。
 
@@ -293,7 +294,7 @@ AWS サービス間のイベントルーティングサービス。「A が X �
 #### Amazon Bedrock AgentCore Runtime
 AgentCore は Bedrock の一機能群。Runtime はエージェントをコンテナとしてホストし、AG-UI・A2A・MCP プロトコルでの通信を処理するマネージドランタイム。
 
-**デモでの役割**: Gateway / Triage / Diagnosis / Resolution の 4 エージェントと、Stack Overflow / GitHub Issues / CloudWatch / Infrastructure Inspector の MCP サーバーをホストする。各コンテナのスケーリングとプロトコル処理をマネージドに担う。
+**デモでの役割**: Pipeline Orchestrator / Chat / Triage / Diagnosis / Resolution の 5 エージェントと、Stack Overflow / GitHub Issues / CloudWatch / Infrastructure Inspector の MCP サーバーをホストする。各コンテナのスケーリングとプロトコル処理をマネージドに担う。
 
 **選定理由**: AG-UI・A2A・MCP プロトコルが内蔵されており、エージェント間通信と UI 連携を標準化できる。AgentCore Plugins を組み込むだけで Registry 動的発見・OTEL 計装が有効になる。ECS でも Auto Scaling や CloudWatch / X-Ray による Observability は実現できるが、これらのプロトコルスタックと AgentCore Registry・Guardrails との統合は自前で実装する必要がある。
 
@@ -314,7 +315,7 @@ REST API の OpenAPI 仕様から MCP ツールを自動生成するサービス
 #### Amazon Bedrock AgentCore Observability
 OTEL 準拠のトレーシングをエージェントに自動計装し、CloudWatch へ送信するサービス。
 
-**デモでの役割**: Bridge Lambda → ticket-dispatcher → Gateway Agent → Triage → Diagnosis → Resolution までの全処理チェーンを単一トレースとして可視化する。どのエージェントがどのツールを何回呼んだかが CloudWatch Transaction Search で一目でわかる。
+**デモでの役割**: Bridge Lambda → ticket-dispatcher → Pipeline Orchestrator → Triage → Diagnosis → Resolution までの全処理チェーンを単一トレースとして可視化する。どのエージェントがどのツールを何回呼んだかが CloudWatch Transaction Search で一目でわかる。
 
 **選定理由**: コード変更なし（pyproject.toml と Dockerfile の設定変更 2 行のみ）でエージェント間トレースが CloudWatch に送信される。自前 OTEL 実装はエージェントごとに boilerplate が増える。
 
@@ -350,7 +351,7 @@ AWS が OSS として公開している Python 製エージェントフレーム
 DynamoDB のデータ変更をリアルタイムで Lambda に通知する機能。
 
 **デモでの役割（2 箇所）**:
-- チケット新規作成（INSERT）を ticket-dispatcher Lambda が検知 → Gateway Agent へ診断依頼
+- チケット新規作成（INSERT）を ticket-dispatcher Lambda が検知 → Pipeline Orchestrator へ診断依頼（非同期）
 - チケット解決（MODIFY: status=resolved）を knowledge-consumer Lambda が検知 → Knowledge テーブルを自動更新
 
 **選定理由**: チケット起票と診断依頼、解決と知識蓄積をそれぞれ疎結合にする。Ticket Service のコードを変更せずにエージェントを後付けできる設計を実現するためのキー。
@@ -447,7 +448,8 @@ Lambda 関数の状態・FIS 実験の状況・CloudFormation スタックの状
 | Triage Agent | Claude Haiku | 分類基準は Registry から取得した `incident-severity-classification` skill に委譲。ツール不使用・分類特化で高速応答と低コストを優先 |
 | Diagnosis Agent | Claude Sonnet | ランブック動的選択 + GraphBuilder 並列実行 + structured_output。複数ランブックによる多角診断に精度と推論能力が必要 |
 | Resolution Agent | Claude Sonnet | structured_output で複数フィールドを確実に埋める必要がある |
-| Gateway Agent | Claude Sonnet | 横断クエリ・Guardrails 判断のハブ。バランスを重視 |
+| Pipeline Orchestrator | Claude Sonnet | Triage→Diagnosis→Resolution を非同期で連鎖。バランスを重視 |
+| Chat Agent | Claude Sonnet | 横断クエリ・Guardrails 判断・手動診断。バランスを重視 |
 
 ### あえて使わなかったもの
 

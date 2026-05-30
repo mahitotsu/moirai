@@ -305,7 +305,7 @@ SKILL_CATALOG: list[dict] = [
 ]
 
 # ---------------------------------------------------------------------------
-# A2A agent catalog — mirrors _A2A_AGENTS + _GATEWAY_AGENT in agent_core_stack.py
+# A2A agent catalog — mirrors _A2A_AGENTS + orchestrator/chat runtimes in agora_stack.py
 # ---------------------------------------------------------------------------
 A2A_CATALOG: list[dict] = [
     {
@@ -345,15 +345,27 @@ A2A_CATALOG: list[dict] = [
         },
     },
     {
-        "record_name": "agora-gateway-agent",
-        "runtime_name": "agora_gateway",
-        "endpoint_id": "agora_gateway_ep",
-        "agent_type": "gateway",
-        "capability": "gateway",
+        "record_name": "agora-orchestrator-agent",
+        "runtime_name": "agora_orchestrator",
+        "endpoint_id": "agora_orchestrator_ep",
+        "agent_type": "orchestrator",
+        "capability": "pipeline-orchestrator",
         "card": {
-            "name": "Gateway Agent",
-            "description": "AG-UI entry point; orchestrates the Triage → Diagnosis → Resolution pipeline",
-            "skills": [{"id": "it-service-desk", "name": "IT Service Desk", "description": "Handle IT incidents end-to-end via the full A2A agent pipeline", "tags": ["itsm", "gateway"]}],
+            "name": "Pipeline Orchestrator",
+            "description": "Automated incident diagnostic pipeline (ticket-dispatcher entry point); runs Triage → Diagnosis → Resolution asynchronously",
+            "skills": [{"id": "incident-pipeline", "name": "Incident Pipeline", "description": "Execute the full Triage → Diagnosis → Resolution pipeline for a reported incident", "tags": ["itsm", "pipeline", "orchestrator"]}],
+        },
+    },
+    {
+        "record_name": "agora-chat-agent",
+        "runtime_name": "agora_chat",
+        "endpoint_id": "agora_chat_ep",
+        "agent_type": "chat",
+        "capability": "chat-agent",
+        "card": {
+            "name": "Chat Agent",
+            "description": "AG-UI entry point for interactive user queries; cross-ticket analysis, knowledge search, and optional manual diagnostic pipeline",
+            "skills": [{"id": "it-service-desk-chat", "name": "IT Service Desk Chat", "description": "Answer cross-cutting queries about tickets and knowledge, and optionally run a manual diagnostic pipeline", "tags": ["itsm", "chat", "query"]}],
         },
     },
 ]

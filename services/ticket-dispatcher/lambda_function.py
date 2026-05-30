@@ -43,9 +43,9 @@ def _expand_template(template: str, **variables: str) -> str:
 
 
 def _invoke_gateway_agent(ticket_id: str, title: str, severity: str, description: str) -> None:
-    """Send a diagnostic request to the Gateway Agent (Triage→Diagnosis→Resolution)."""
+    """Send a diagnostic request to the Pipeline Orchestrator (Triage→Diagnosis→Resolution)."""
     if not _AGENT_RUNTIME_ARN:
-        logger.warning("AGENT_RUNTIME_ARN not set — skipping agent invocation")
+        logger.warning("AGENT_RUNTIME_ARN not set — skipping orchestrator invocation")
         return
 
     template = _get_prompt_template()
@@ -93,4 +93,4 @@ def handler(event: dict, context: object) -> None:
         logger.info("new ticket: ticket_id=%s severity=%s", ticket_id, severity)
 
         _invoke_gateway_agent(ticket_id, title, severity, description)
-        logger.info("agent invoked: ticket_id=%s", ticket_id)
+        logger.info("orchestrator invoked: ticket_id=%s", ticket_id)

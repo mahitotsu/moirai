@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     # Set directly via API_KEY, or resolved at startup from API_KEY_SECRET_NAME
     api_key: str = ""
     api_key_secret_name: str = ""
-    gateway_prompt_arn: str = ""
+    orchestrator_prompt_arn: str = ""
+    chat_prompt_arn: str = ""
     triage_prompt_arn: str = ""
     diagnosis_prompt_arn: str = ""
     resolution_prompt_arn: str = ""

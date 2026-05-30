@@ -234,7 +234,8 @@ export default function SystemTab() {
 
   const promptMap: Record<string, string | null> = livePrompts
     ? {
-        gateway: livePrompts.gateway || null,
+        orchestrator: livePrompts.orchestrator || null,
+        chat: livePrompts.chat || null,
         triage: livePrompts.triage || null,
         diagnosis: livePrompts.diagnosis || null,
         resolution: livePrompts.resolution || null,
