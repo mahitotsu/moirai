@@ -13,15 +13,24 @@ _MONITORING_STACK := FaultInjectionStack
 # make cdk-deploy                 — CDKデプロイ (承認必要、イメージビルド&プッシュを含む)
 # make gen-specs                  — OpenAPI spec JSONを再生成
 #
-# デモ制御 (V2):
+# デモ制御:
+# make demo-clear                 — DynamoDB・S3 Vectors のデータを全削除 (冪等)
 # make demo-seed                  — 過去チケット50件を投入 (類似検索・横断クエリ用)
+# make demo-pipeline-test         — FIS不要でエージェントパイプラインを直接トリガー
 # make demo-start                 — EventBridge Scheduler 有効化 (トラフィック開始)
-# make demo-inject                — FIS 実験開始 (障害注入)
+# make demo-inject                — FIS 実験開始 (障害注入・e2e確認用)
 # make demo-stop                  — Scheduler 無効化 + 実行中 FIS 実験を強制終了
 #
-# Observability セットアップ (V3, アカウントごとに1回・冪等):
+# 段階的デモ検証フロー:
+#   Stage 1: make demo-clear          # データをゼロにリセット
+#   Stage 2: make demo-seed           # Knowledge/Vector データ構築を確認
+#   Stage 3: make demo-pipeline-test  # Triage→Diagnosis→Resolution 単体確認
+#   Stage 4: make demo-start          # Scheduler 有効化
+#            make demo-inject         # FIS e2e 確認
+#   Stage 5: make demo-stop && make demo-clear  # 後片付け
+#
 .PHONY: test test-service lint build cdk-diff cdk-synth cdk-deploy gen-specs \
-        demo-seed demo-start demo-inject demo-stop qemu-setup
+        demo-clear demo-seed demo-pipeline-test demo-start demo-inject demo-stop qemu-setup
 
 test:
 	@failed=0; \
@@ -84,12 +93,20 @@ gen-specs:
 	json.dump(t.openapi(), open('infrastructure/specs/ticket-service.json','w'), indent=2); \
 	print('Specs generated in infrastructure/specs/')"
 
-# ─── V2 デモ制御 ─────────────────────────────────────────────────────────────
+# ─── デモ制御 ────────────────────────────────────────────────────────────────
+
+demo-clear:
+	@echo "==> Clearing all demo data (tickets, knowledge, vectors) ..."
+	@uv run python scripts/clear_demo_data.py
 
 demo-seed:
 	@echo "==> Seeding demo data (50 historical tickets) ..."
 	@uv run python scripts/seed_demo_data.py
 	@echo "==> Seed complete. Knowledge table and S3 Vectors will be updated in ~30 seconds via DynamoDB Streams."
+
+demo-pipeline-test:
+	@echo "==> Triggering agent pipeline directly (no FIS required) ..."
+	@uv run python scripts/pipeline_test.py
 
 demo-start:
 	@echo "==> Enabling EventBridge Scheduler (traffic starts, baseline metrics build up)..."
