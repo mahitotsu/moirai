@@ -300,12 +300,15 @@ class AgoraStack(cdk.Stack):
         ]
 
         _xray_write = iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess")
+        _app_signals = iam.ManagedPolicy.from_aws_managed_policy_name(
+            "CloudWatchLambdaApplicationSignalsExecutionRolePolicy"
+        )
         self.ticket_role = iam.Role(
             self,
             "TicketServiceRole",
             role_name="agora-ticket-service-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec, _xray_write],
+            managed_policies=[_basic_exec, _xray_write, _app_signals],
         )
         self.ticket_role.add_to_policy(
             iam.PolicyStatement(
@@ -350,9 +353,8 @@ class AgoraStack(cdk.Stack):
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
                 _basic_exec,
-                # X-Ray Active Tracing: botocore が invoke_agent_runtime に X-Amzn-Trace-Id を付与し
-                # chat-proxy → Gateway → ... が Transaction Search で単一トレースとして連結される
-                iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess"),
+                _xray_write,
+                _app_signals,
             ],
         )
         self.chat_proxy_role.add_to_policy(
@@ -404,6 +406,7 @@ class AgoraStack(cdk.Stack):
                     "xray:GetSamplingRules",
                     "xray:GetSamplingTargets",
                     "xray:GetSamplingStatisticSummaries",
+                    "cloudwatch:PutMetricData",
                 ],
                 ["*"],
             ),
@@ -449,6 +452,30 @@ class AgoraStack(cdk.Stack):
                     f"arn:aws:secretsmanager:{self.region}:{self.account}"
                     ":secret:bedrock-agentcore-identity*"
                 ],
+            )
+        )
+        self.gateway_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                ],
+                resources=["*"],
+            )
+        )
+        self.gateway_execution_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "xray:PutTraceSegments",
+                    "xray:PutSpans",
+                    "xray:PutSpansForIndexing",
+                    "xray:GetSamplingRules",
+                    "xray:GetSamplingTargets",
+                    "xray:GetSamplingStatisticSummaries",
+                    "cloudwatch:PutMetricData",
+                ],
+                resources=["*"],
             )
         )
 
@@ -825,10 +852,13 @@ class AgoraStack(cdk.Stack):
         # LAMBDA FUNCTIONS
         # =====================================================================
         # ADOT auto-instrumentation via Lambda Extension (layer.zip in Dockerfile)
+        # ADOT Lambda Layer (layer.zip を Docker 内に /opt/ 展開) の OTEL 設定。
+        # OTEL_AWS_APPLICATION_SIGNALS_ENABLED はデフォルト true のまま使用する。
+        # aws_configurator が localhost:4316 (Lambda Application Signals OTLP receiver) に
+        # スパンを送信し、X-Ray → CloudWatchLogs (aws/spans) に転送される。
         _adot_env = {
             "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument",
             "OTEL_PROPAGATORS": "xray",
-            "OTEL_AWS_APPLICATION_SIGNALS_ENABLED": "false",
         }
         _common_env = {
             "AWS_LWA_PORT": "8080",
@@ -914,9 +944,8 @@ class AgoraStack(cdk.Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaDynamoDBExecutionRole"
                 ),
-                # X-Ray Active Tracing: invoke_agent_runtime に X-Amzn-Trace-Id を付与し
-                # Transaction Search で ticket-dispatcher → Gateway → ... を単一トレースとして連結
-                iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess"),
+                _xray_write,
+                _app_signals,
             ],
         )
         _dispatcher_role.add_to_policy(
@@ -968,6 +997,7 @@ class AgoraStack(cdk.Stack):
             ),
             environment={
                 **_adot_env,
+                "OTEL_SERVICE_NAME": "agora-ticket-dispatcher",
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
                 "AGENT_RUNTIME_ARN": self.orchestrator_agent_runtime.attr_agent_runtime_arn,
                 "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt_version.attr_arn,
@@ -1006,6 +1036,7 @@ class AgoraStack(cdk.Stack):
                     "service-role/AWSLambdaDynamoDBExecutionRole"
                 ),
                 _xray_write,
+                _app_signals,
             ],
         )
         _knowledge_consumer_role.add_to_policy(
@@ -1065,6 +1096,7 @@ class AgoraStack(cdk.Stack):
             ),
             environment={
                 **_adot_env,
+                "OTEL_SERVICE_NAME": "agora-knowledge-consumer",
                 "KNOWLEDGE_TABLE_NAME": self.knowledge_table.table_name,
                 "VECTOR_BUCKET_NAME": _VECTOR_BUCKET_NAME,
                 "VECTOR_INDEX_NAME": _VECTOR_INDEX_NAME,
