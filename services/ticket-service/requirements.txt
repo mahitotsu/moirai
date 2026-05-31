@@ -8,6 +8,8 @@ anyio==4.13.0
     # via
     #   starlette
     #   watchfiles
+asgiref==3.11.1
+    # via opentelemetry-instrumentation-asgi
 boto3==1.43.7
     # via ticket-service
 botocore==1.43.7
@@ -28,10 +30,45 @@ httptools==0.7.1
     # via uvicorn
 idna==3.15
     # via anyio
+importlib-metadata==8.7.1
+    # via opentelemetry-api
 jmespath==1.1.0
     # via
     #   boto3
     #   botocore
+opentelemetry-api==1.40.0
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-botocore
+    #   opentelemetry-instrumentation-fastapi
+    #   opentelemetry-propagator-aws-xray
+    #   opentelemetry-semantic-conventions
+opentelemetry-instrumentation==0.61b0
+    # via
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-botocore
+    #   opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-asgi==0.61b0
+    # via opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-botocore==0.61b0
+    # via ticket-service
+opentelemetry-instrumentation-fastapi==0.61b0
+    # via ticket-service
+opentelemetry-propagator-aws-xray==1.0.2
+    # via opentelemetry-instrumentation-botocore
+opentelemetry-semantic-conventions==0.61b0
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-botocore
+    #   opentelemetry-instrumentation-fastapi
+opentelemetry-util-http==0.61b0
+    # via
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-fastapi
+packaging==26.2
+    # via opentelemetry-instrumentation
 pydantic==2.13.4
     # via
     #   fastapi
@@ -58,6 +95,8 @@ typing-extensions==4.15.0
     # via
     #   anyio
     #   fastapi
+    #   opentelemetry-api
+    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   starlette
@@ -77,3 +116,7 @@ watchfiles==1.1.1
     # via uvicorn
 websockets==16.0
     # via uvicorn
+wrapt==1.17.3
+    # via opentelemetry-instrumentation
+zipp==3.23.1
+    # via importlib-metadata
