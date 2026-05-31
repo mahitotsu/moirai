@@ -36,32 +36,26 @@ jmespath==1.1.0
     # via
     #   boto3
     #   botocore
+mangum==0.21.0
+    # via ticket-service
 opentelemetry-api==1.40.0
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-botocore
     #   opentelemetry-instrumentation-fastapi
-    #   opentelemetry-propagator-aws-xray
     #   opentelemetry-semantic-conventions
 opentelemetry-instrumentation==0.61b0
     # via
     #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-botocore
     #   opentelemetry-instrumentation-fastapi
 opentelemetry-instrumentation-asgi==0.61b0
     # via opentelemetry-instrumentation-fastapi
-opentelemetry-instrumentation-botocore==0.61b0
-    # via ticket-service
 opentelemetry-instrumentation-fastapi==0.61b0
     # via ticket-service
-opentelemetry-propagator-aws-xray==1.0.2
-    # via opentelemetry-instrumentation-botocore
 opentelemetry-semantic-conventions==0.61b0
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-botocore
     #   opentelemetry-instrumentation-fastapi
 opentelemetry-util-http==0.61b0
     # via
@@ -95,6 +89,7 @@ typing-extensions==4.15.0
     # via
     #   anyio
     #   fastapi
+    #   mangum
     #   opentelemetry-api
     #   opentelemetry-semantic-conventions
     #   pydantic

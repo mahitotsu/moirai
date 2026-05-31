@@ -853,9 +853,10 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         # ADOT auto-instrumentation via Lambda Extension (layer.zip in Dockerfile)
         # ADOT Lambda Layer (layer.zip を Docker 内に /opt/ 展開) の OTEL 設定。
-        # OTEL_AWS_APPLICATION_SIGNALS_ENABLED はデフォルト true のまま使用する。
-        # aws_configurator が localhost:4316 (Lambda Application Signals OTLP receiver) に
-        # スパンを送信し、X-Ray → CloudWatchLogs (aws/spans) に転送される。
+        # Lambda Python ベースイメージでは AWS_LAMBDA_EXEC_WRAPPER が有効になり、
+        # otel-instrument → otel_wrapper → AwsLambdaInstrumentor が機能する。
+        # aws_configurator が Lambda 環境を検出して OTLPUdpSpanExporter (127.0.0.1:2000) で
+        # X-Ray daemon に送信する。
         _adot_env = {
             "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument",
             "OTEL_PROPAGATORS": "xray",
@@ -887,7 +888,7 @@ class AgoraStack(cdk.Stack):
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
-                **_common_env,
+                **_adot_env,
                 "TABLE_NAME": self.tickets_table.table_name,
                 "API_KEY_SECRET_NAME": self.services_api_key_secret.secret_name,
                 "ORCHESTRATOR_PROMPT_ARN": self.orchestrator_prompt_version.attr_arn,

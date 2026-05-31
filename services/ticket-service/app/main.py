@@ -5,14 +5,12 @@ from typing import Annotated
 import boto3
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+from mangum import Mangum
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.models import SimilarTicket, Ticket, TicketCreate, TicketUpdate
 from app.repository import TicketRepository
 from app.settings import Settings
-
-BotocoreInstrumentor().instrument()
 
 settings = Settings()  # type: ignore[call-arg]
 _dynamo_client = boto3.client("dynamodb")
@@ -22,6 +20,8 @@ _bedrock_runtime_client = boto3.client("bedrock-runtime") if settings.vector_buc
 
 # FastAPI auto-exposes /openapi.json — used by AgentCore Gateway for MCP tool generation
 app = FastAPI(title="Ticket Service")
+# OTEL_PYTHON_DISABLED_INSTRUMENTATIONS のデフォルトに fastapi が含まれるため
+# auto-discovery を経由せず明示的に instrument する
 FastAPIInstrumentor.instrument_app(app, excluded_urls="health")
 
 
@@ -125,3 +125,6 @@ def get_prompts() -> dict[str, str]:
         "diagnosis": _fetch_prompt_text(settings.diagnosis_prompt_arn),
         "resolution": _fetch_prompt_text(settings.resolution_prompt_arn),
     }
+
+
+handler = Mangum(app)
