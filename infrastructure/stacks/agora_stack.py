@@ -299,12 +299,13 @@ class AgoraStack(cdk.Stack):
             "dynamodb:BatchGetItem",
         ]
 
+        _xray_write = iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess")
         self.ticket_role = iam.Role(
             self,
             "TicketServiceRole",
             role_name="agora-ticket-service-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[_basic_exec],
+            managed_policies=[_basic_exec, _xray_write],
         )
         self.ticket_role.add_to_policy(
             iam.PolicyStatement(
@@ -329,7 +330,7 @@ class AgoraStack(cdk.Stack):
         )
         self.ticket_role.add_to_policy(
             iam.PolicyStatement(
-                actions=["s3vectors:QueryVectors"],
+                actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
                 resources=[self.vector_bucket.attr_vector_bucket_arn + "/*"],
             )
         )
@@ -823,9 +824,16 @@ class AgoraStack(cdk.Stack):
         # =====================================================================
         # LAMBDA FUNCTIONS
         # =====================================================================
+        # ADOT auto-instrumentation via Lambda Extension (layer.zip in Dockerfile)
+        _adot_env = {
+            "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument",
+            "OTEL_PROPAGATORS": "xray",
+            "OTEL_AWS_APPLICATION_SIGNALS_ENABLED": "false",
+        }
         _common_env = {
             "AWS_LWA_PORT": "8080",
             "AWS_LWA_READINESS_CHECK_PATH": "/health",
+            **_adot_env,
         }
 
         self.ticket_fn = lambda_.DockerImageFunction(
@@ -839,6 +847,7 @@ class AgoraStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_SERVICE_MB,
             timeout=_TIMEOUT_SERVICE,
+            tracing=lambda_.Tracing.ACTIVE,
             role=self.ticket_role,
             log_group=logs.LogGroup(
                 self,
@@ -958,6 +967,7 @@ class AgoraStack(cdk.Stack):
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
+                **_adot_env,
                 # AGENT_RUNTIME_ARN はスタック内で直接解決 (循環参照なし)
                 "AGENT_RUNTIME_ARN": self.orchestrator_agent_runtime.attr_agent_runtime_arn,
                 "DISPATCHER_PROMPT_ARN": self.dispatcher_prompt_version.attr_arn,
@@ -995,6 +1005,7 @@ class AgoraStack(cdk.Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaDynamoDBExecutionRole"
                 ),
+                _xray_write,
             ],
         )
         _knowledge_consumer_role.add_to_policy(
@@ -1043,6 +1054,7 @@ class AgoraStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_WORKER_MB,
             timeout=_TIMEOUT_LONG,
+            tracing=lambda_.Tracing.ACTIVE,
             role=_knowledge_consumer_role,
             log_group=logs.LogGroup(
                 self,
@@ -1052,6 +1064,7 @@ class AgoraStack(cdk.Stack):
                 removal_policy=cdk.RemovalPolicy.DESTROY,
             ),
             environment={
+                **_adot_env,
                 "KNOWLEDGE_TABLE_NAME": self.knowledge_table.table_name,
                 "VECTOR_BUCKET_NAME": _VECTOR_BUCKET_NAME,
                 "VECTOR_INDEX_NAME": _VECTOR_INDEX_NAME,
@@ -1223,6 +1236,8 @@ class AgoraStack(cdk.Stack):
         for srv in _MCP_SERVERS:
             _extra = _github_env() if srv["name"] == "github-issues" else {}
             env_vars = {k: v for k, v in {**srv["env"], **_extra}.items() if v}
+            env_vars["AGENT_OBSERVABILITY_ENABLED"] = "true"
+            env_vars["OTEL_SERVICE_NAME"] = f"agora-{srv['name']}"
             cid = _logical_id(srv["runtime_name"]) + "Runtime"
             runtime = agentcore.CfnRuntime(
                 self,

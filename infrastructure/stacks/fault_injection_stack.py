@@ -19,6 +19,13 @@ _SERVICES_DIR = Path(__file__).parent.parent.parent / "services"
 
 # ── Lambda ────────────────────────────────────────────────────────────────
 _MEMORY_MB = 256
+
+# ADOT auto-instrumentation via Lambda Extension (layer.zip in Dockerfile)
+_ADOT_ENV = {
+    "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument",
+    "OTEL_PROPAGATORS": "xray",
+    "OTEL_AWS_APPLICATION_SIGNALS_ENABLED": "false",
+}
 _TIMEOUT_STANDARD = cdk.Duration.seconds(30)
 _TIMEOUT_BRIDGE = cdk.Duration.seconds(120)
 _TIMEOUT_VISIBILITY = cdk.Duration.seconds(180)
@@ -53,6 +60,7 @@ class FaultInjectionStack(cdk.Stack):
         # =====================================================================
         # fake-api-server — 監視対象 Lambda
         # =====================================================================
+        _xray_write = iam.ManagedPolicy.from_aws_managed_policy_name("AWSXRayDaemonWriteAccess")
         self.fake_api_role = iam.Role(
             self,
             "FakeApiRole",
@@ -61,7 +69,8 @@ class FaultInjectionStack(cdk.Stack):
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaBasicExecutionRole"
-                )
+                ),
+                _xray_write,
             ],
         )
         self.fake_api_role.add_to_policy(
@@ -86,7 +95,9 @@ class FaultInjectionStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_MB,
             timeout=_TIMEOUT_STANDARD,
+            tracing=lambda_.Tracing.ACTIVE,
             role=self.fake_api_role,
+            environment=_ADOT_ENV,
         )
         cdk.Tags.of(self.fake_api_fn).add(
             "agora:role",
@@ -228,6 +239,7 @@ class FaultInjectionStack(cdk.Stack):
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AWSLambdaSQSQueueExecutionRole"
                 ),
+                _xray_write,
             ],
         )
         _bridge_role.add_to_policy(
@@ -251,8 +263,10 @@ class FaultInjectionStack(cdk.Stack):
             architecture=lambda_.Architecture.ARM_64,
             memory_size=_MEMORY_MB,
             timeout=_TIMEOUT_BRIDGE,
+            tracing=lambda_.Tracing.ACTIVE,
             role=_bridge_role,
             environment={
+                **_ADOT_ENV,
                 # チケットサービス URL は SSM 経由 (AgoraStack に依存しない)
                 "TICKET_SERVICE_URL": ssm.StringParameter.value_for_string_parameter(
                     self, "/agora/ticket-service-url"

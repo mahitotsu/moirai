@@ -52,7 +52,7 @@ LAMBDAS: list[tuple[Path, dict[str, str]]] = [
     (SERVICES / "fake-api-server", {}),
 ]
 
-# boto3 はモックする (Lambda runtime に同梱されており requirements.txt 不要なため)
+# boto3 / botocore は Lambda runtime 同梱なので requirements.txt 不要 → モックで代替。
 _MOCK_PREAMBLE = """\
 import sys, os
 from unittest.mock import MagicMock
