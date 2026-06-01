@@ -135,6 +135,9 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         if (s := registry.fetch_skill_by_name(name.removeprefix("agora-")))
     ]
 
+    if not skills:
+        return {"response": json.dumps([])}
+
     # Agent 2+: ランブック毎に Graph で並列診断
     mcp_url = registry.get_mcp_gateway_url()
     builder = GraphBuilder()

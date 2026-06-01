@@ -10,9 +10,13 @@ Safe to run multiple times (idempotent).
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+
+# stop_sessions.py を同じディレクトリから import できるようにする
+sys.path.insert(0, str(Path(__file__).parent))
 
 _REGION = "us-east-1"
 _TICKETS_TABLE = "agora-tickets"
@@ -21,6 +25,12 @@ _VECTOR_BUCKET_NAME = "agora-incident-vectors"
 _VECTOR_INDEX_NAME = "tickets"
 _DYNAMO_BATCH_SIZE = 25   # DynamoDB batch_write_item 上限
 _VECTOR_BATCH_SIZE = 100  # S3 Vectors delete_vectors バッチサイズ
+_SQS_QUEUES = [
+    "https://sqs.us-east-1.amazonaws.com/346929044083/agora-alarm-queue",
+    "https://sqs.us-east-1.amazonaws.com/346929044083/agora-alarm-dlq",
+    "https://sqs.us-east-1.amazonaws.com/346929044083/agora-knowledge-consumer-dlq",
+    "https://sqs.us-east-1.amazonaws.com/346929044083/agora-ticket-dispatcher-dlq",
+]
 
 
 def _scan_all_keys(dynamo, table_name: str, key_attr: str) -> list[str]:
@@ -74,9 +84,38 @@ def _delete_vectors(s3v, ticket_ids: list[str]) -> int:
     return deleted
 
 
+
+
+def _purge_sqs_queues(sqs) -> int:
+    """SQS キューをパージして削除メッセージ数の概算を返す。"""
+    purged = 0
+    for url in _SQS_QUEUES:
+        try:
+            attrs = sqs.get_queue_attributes(QueueUrl=url, AttributeNames=["ApproximateNumberOfMessages"])
+            count = int(attrs["Attributes"].get("ApproximateNumberOfMessages", "0"))
+            if count > 0:
+                sqs.purge_queue(QueueUrl=url)
+                purged += count
+                print(f"    Purged {count} messages from {url.split('/')[-1]}")
+            else:
+                print(f"    {url.split('/')[-1]}: empty")
+        except ClientError as e:
+            print(f"    Warning: SQS purge error for {url.split('/')[-1]}: {e}")
+    return purged
+
+
 def main() -> None:
     dynamo = boto3.client("dynamodb", region_name=_REGION)
     s3v = boto3.client("s3vectors", region_name=_REGION)
+    sqs = boto3.client("sqs", region_name=_REGION)
+    # 0a. AgentCore セッションを全停止 (maxVms 枯渇対策)
+    from stop_sessions import stop_all_sessions  # noqa: PLC0415
+    print("==> Stopping all active AgentCore Runtime sessions ...")
+    stop_all_sessions()
+
+    # 0b. SQS キューをパージ (デモ前のノイズメッセージを除去)
+    print("==> Purging SQS queues ...")
+    _purge_sqs_queues(sqs)
 
     # 1. チケット一覧を先に取得 (S3 Vectors の削除キーとして使う)
     print(f"==> Scanning {_TICKETS_TABLE} ...")
@@ -115,6 +154,7 @@ def main() -> None:
     tickets  : {len(ticket_ids)} deleted
     knowledge: {len(knowledge_ids)} deleted
     vectors  : {len(ticket_ids)} deleted (resolved tickets only)
+    SQS      : all queues purged
 
 Note: DynamoDB Streams の残処理が knowledge-consumer を再トリガーする場合があります。
       30 秒後に Knowledge タブが空であることを確認してください。

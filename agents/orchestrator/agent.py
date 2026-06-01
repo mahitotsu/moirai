@@ -9,6 +9,7 @@ from typing import Any
 import boto3
 import registry
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from botocore.config import Config
 from pydantic_settings import BaseSettings
 from strands import Agent, tool
 from strands.models import BedrockModel, CacheConfig
@@ -26,7 +27,13 @@ if not _settings.system_prompt_arn:
     raise RuntimeError("SYSTEM_PROMPT_ARN must be set")
 _SYSTEM_PROMPT = registry.fetch_system_prompt(_settings.system_prompt_arn)
 
-_agentcore = boto3.client("bedrock-agentcore")
+# サブエージェント呼び出しは Diagnosis のナレッジ検索 + LLM 推論で数分かかることがある。
+# デフォルトの 60秒 read timeout だと ReadTimeoutError になりゾンビセッションが発生するため
+# 300秒に拡大して確実に完了を待つ。
+_agentcore = boto3.client(
+    "bedrock-agentcore",
+    config=Config(read_timeout=300, connect_timeout=10),
+)
 app = BedrockAgentCoreApp()
 
 
@@ -36,19 +43,32 @@ app = BedrockAgentCoreApp()
 
 
 def _invoke_sub_agent(runtime_arn: str, message: str) -> str:
+    session_id = str(uuid.uuid4())
     payload = json.dumps({"message": message}).encode()
-    resp = _agentcore.invoke_agent_runtime(
-        agentRuntimeArn=runtime_arn,
-        qualifier="DEFAULT",
-        payload=payload,
-        runtimeSessionId=str(uuid.uuid4()),
-    )
-    body: bytes = resp["response"].read()
     try:
-        data = json.loads(body)
-        return data.get("response", body.decode())
+        resp = _agentcore.invoke_agent_runtime(
+            agentRuntimeArn=runtime_arn,
+            qualifier="DEFAULT",
+            payload=payload,
+            runtimeSessionId=session_id,
+        )
+        body: bytes = resp["response"].read()
+        try:
+            data = json.loads(body)
+            return data.get("response", body.decode())
+        except Exception:
+            return body.decode()
     except Exception:
-        return body.decode()
+        # 呼び出し失敗時はセッションを確実に停止してVMスロットを解放する
+        try:
+            _agentcore.stop_runtime_session(
+                agentRuntimeArn=runtime_arn,
+                runtimeSessionId=session_id,
+            )
+            logger.info("stopped session %s after error", session_id)
+        except Exception:
+            pass
+        raise
 
 
 @tool

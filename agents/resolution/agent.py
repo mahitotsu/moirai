@@ -59,8 +59,9 @@ def invoke(payload: dict[str, Any], context: Any) -> dict[str, str]:
         tools=[mcp],
         plugins=plugins,  # type: ignore[arg-type]
     )
-    result = agent.structured_output(ResolutionResult, message)
-    return {"response": result.model_dump_json()}
+    result = agent(message, structured_output_model=ResolutionResult)
+    output: ResolutionResult = result.structured_output  # type: ignore[assignment]
+    return {"response": output.model_dump_json()}
 
 
 if __name__ == "__main__":
