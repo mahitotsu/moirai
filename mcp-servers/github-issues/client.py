@@ -18,14 +18,16 @@ class GitHubIssuesClient:
 
     async def search_issues(
         self,
-        service: str,
-        error_type: str,
+        query: str | None = None,
+        service: str = "",
+        error_type: str = "",
         repos: list[str] | None = None,
         state: str = "all",
         labels: list[str] | None = None,
         num_results: int = 5,
     ) -> list[dict]:
-        q = f"{service} {error_type} is:issue"
+        base = query or f"{service} {error_type}".strip()
+        q = f"{base} is:issue"
         if state != "all":
             q += f" is:{state}"
         if repos:

@@ -33,12 +33,24 @@ async def test_search_returns_formatted_markdown(mock_so_client):
             "body": "<p>Increase max_connections</p>",
         }
     ]
-    result = await search_stackoverflow("PostgreSQL", "connection pool exhausted")
+    result = await search_stackoverflow(
+        service="PostgreSQL", error_type="connection pool exhausted"
+    )
 
     assert "Connection pool exhausted" in result
     assert "Score: 42" in result
     assert "https://stackoverflow.com/questions/1" in result
     assert "Answers: 3" in result
+
+
+async def test_search_with_free_form_query(mock_so_client):
+    """query パラメータ単体で呼び出せる（エージェントの実際の呼び出しパターン）。"""
+    mock_so_client.search.return_value = []
+    await search_stackoverflow(query="Lambda ThrottlingException boto3", tags=["aws-lambda"])
+
+    call_kwargs = mock_so_client.search.call_args.kwargs
+    assert call_kwargs["query"] == "Lambda ThrottlingException boto3"
+    assert call_kwargs["tags"] == ["aws-lambda"]
 
 
 async def test_search_strips_html_from_body(mock_so_client):
@@ -52,7 +64,7 @@ async def test_search_strips_html_from_body(mock_so_client):
             "body": "<p><strong>Use</strong> <em>pooling</em></p>",
         }
     ]
-    result = await search_stackoverflow("PostgreSQL", "connection pooling")
+    result = await search_stackoverflow(service="PostgreSQL", error_type="connection pooling")
 
     assert "<p>" not in result
     assert "<strong>" not in result
@@ -61,7 +73,7 @@ async def test_search_strips_html_from_body(mock_so_client):
 
 async def test_search_no_results_returns_helpful_message(mock_so_client):
     mock_so_client.search.return_value = []
-    result = await search_stackoverflow("UnknownService", "xyzzy no match")
+    result = await search_stackoverflow(query="xyzzy no match")
 
     assert "No results found" in result
 
@@ -71,11 +83,11 @@ async def test_search_api_error_raises_user_friendly_value_error(mock_so_client)
     mock_so_client.search.side_effect = Exception("connection reset")
 
     with pytest.raises(ValueError, match="Stack Overflow search failed"):
-        await search_stackoverflow("SomeService", "some error")
+        await search_stackoverflow(service="SomeService", error_type="some error")
 
 
 async def test_num_results_capped_at_10(mock_so_client):
     mock_so_client.search.return_value = []
-    await search_stackoverflow("SomeService", "some error", num_results=99)
+    await search_stackoverflow(service="SomeService", error_type="some error", num_results=99)
 
     assert mock_so_client.search.call_args.kwargs["num_results"] <= 10

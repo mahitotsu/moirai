@@ -23,20 +23,28 @@ def _get_client() -> StackOverflowClient:
 
 @mcp.tool()
 async def search_stackoverflow(
-    service: str,
-    error_type: str,
+    query: str | None = None,
+    service: str = "",
+    error_type: str = "",
     tags: list[str] | None = None,
     num_results: int = 5,
 ) -> str:
     """技術的な障害に関連する質問と回答をStack Overflowで検索する。
 
+    **推奨**: インシデントのコンテキストが分かっている場合は `service` と `error_type` を
+    明示的に指定する。これらは検索クエリの品質を高める構造化された情報として使用される。
+    サービスやエラー種別が不明な場合のみ `query` を使用すること。
+
     Args:
-        service: 障害が発生したサービスまたは技術
+        service: 障害が発生したサービスまたは技術（推奨・省略可）
             （例："AWS Lambda"、"PostgreSQL"、"Python boto3"）。
-        error_type: 観測された障害またはエラーの種類
-            （例："timeout"、"connection refused"、"memory limit exceeded"、"permission denied"）。
+            インシデントから特定できる場合は必ず指定すること。
+        error_type: 観測された障害またはエラーの種類（推奨・省略可）
+            （例："ThrottlingException"、"connection refused"、"memory limit exceeded"）。
+            エラーメッセージや症状から特定できる場合は必ず指定すること。
+        query: 自由形式のフォールバック検索クエリ。service/error_type が特定できない
+            場合のみ使用する（例："Lambda ThrottlingException boto3"）。
         tags: 結果を絞り込むSOタグ（省略可）（例：["aws-lambda", "python"]）。
-            明示的に不明な場合はサービス名から推測する。
         num_results: 返す結果数（デフォルト5、最大10）。
 
     Returns:
@@ -44,7 +52,8 @@ async def search_stackoverflow(
     """
     try:
         items = await _get_client().search(
-            service=service, error_type=error_type, tags=tags, num_results=min(num_results, 10)
+            query=query, service=service, error_type=error_type,
+            tags=tags, num_results=min(num_results, 10),
         )
     except Exception as e:
         raise ValueError(f"Stack Overflow search failed: {e}") from e

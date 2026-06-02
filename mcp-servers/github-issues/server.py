@@ -32,8 +32,9 @@ mcp = FastMCP(
 
 @mcp.tool()
 async def search_github_issues(
-    service: str,
-    error_type: str,
+    query: str | None = None,
+    service: str = "",
+    error_type: str = "",
     repos: list[str] | None = None,
     state: Literal["open", "closed", "all"] = "all",
     labels: list[str] | None = None,
@@ -41,11 +42,19 @@ async def search_github_issues(
 ) -> str:
     """技術的な障害に関連するバグレポートとディスカッションをGitHub Issuesで検索する。
 
+    **推奨**: インシデントのコンテキストが分かっている場合は `service` と `error_type` を
+    明示的に指定する。これらは検索クエリの品質を高める構造化された情報として使用される。
+    サービスやエラー種別が不明な場合のみ `query` を使用すること。
+
     Args:
-        service: 障害が発生したサービスまたはライブラリ
+        service: 障害が発生したサービスまたはライブラリ（推奨・省略可）
             （例："AWS Lambda"、"boto3"、"aws-cdk"）。
-        error_type: 観測された障害またはエラーの種類
-            （例："timeout"、"InvalidParameterException"、"connection refused"）。
+            インシデントから特定できる場合は必ず指定すること。
+        error_type: 観測された障害またはエラーの種類（推奨・省略可）
+            （例："ThrottlingException"、"InvalidParameterException"、"connection refused"）。
+            エラーメッセージや症状から特定できる場合は必ず指定すること。
+        query: 自由形式のフォールバック検索クエリ。service/error_type が特定できない
+            場合のみ使用する（例："agora-fake-api Lambda error rate"）。
         repos: 検索を制限するリポジトリのリスト（省略可）
             （例：["boto/boto3", "aws/aws-cdk"]）。
         state: Issueの状態でフィルタ — "open"、"closed"、または "all"（デフォルト）。
@@ -57,6 +66,7 @@ async def search_github_issues(
     """
     try:
         items = await _get_client().search_issues(
+            query=query,
             service=service,
             error_type=error_type,
             repos=repos,

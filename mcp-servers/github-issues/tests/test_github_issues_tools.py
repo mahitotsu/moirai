@@ -33,7 +33,9 @@ async def test_search_returns_formatted_markdown(mock_gh_client):
             "comments": 5,
         }
     ]
-    result = await search_github_issues("PostgreSQL", "connection pool exhausted")
+    result = await search_github_issues(
+        service="PostgreSQL", error_type="connection pool exhausted"
+    )
 
     assert "Connection pool exhausted" in result
     assert "State: open" in result
@@ -42,9 +44,18 @@ async def test_search_returns_formatted_markdown(mock_gh_client):
     assert "Comments: 5" in result
 
 
+async def test_search_with_free_form_query(mock_gh_client):
+    """query パラメータ単体で呼び出せる（エージェントの実際の呼び出しパターン）。"""
+    mock_gh_client.search_issues.return_value = []
+    await search_github_issues(query="agora-fake-api Lambda error rate")
+
+    call_kwargs = mock_gh_client.search_issues.call_args.kwargs
+    assert call_kwargs["query"] == "agora-fake-api Lambda error rate"
+
+
 async def test_search_no_results_returns_helpful_message(mock_gh_client):
     mock_gh_client.search_issues.return_value = []
-    result = await search_github_issues("UnknownService", "no match error")
+    result = await search_github_issues(query="no match error")
 
     assert "No issues found" in result
 
@@ -54,7 +65,7 @@ async def test_search_api_error_raises_user_friendly_value_error(mock_gh_client)
     mock_gh_client.search_issues.side_effect = Exception("rate limit exceeded")
 
     with pytest.raises(ValueError, match="GitHub Issues search failed"):
-        await search_github_issues("SomeService", "some error")
+        await search_github_issues(service="SomeService", error_type="some error")
 
 
 async def test_body_truncated_in_preview(mock_gh_client):
@@ -70,6 +81,6 @@ async def test_body_truncated_in_preview(mock_gh_client):
             "comments": 0,
         }
     ]
-    result = await search_github_issues("SomeService", "long body error")
+    result = await search_github_issues(service="SomeService", error_type="long body error")
 
     assert len(result) < len(long_body)
