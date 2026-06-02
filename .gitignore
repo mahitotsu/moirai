@@ -29,3 +29,8 @@ infrastructure/import-mapping.json
 
 # OS
 .DS_Store
+
+# ローカル専用ドキュメント（リポジトリ非公開）
+PITCH.md
+PITCH-design-notes.md
+blog_draft.md
